@@ -17,6 +17,8 @@
     "lottie-react-native": "^7.3.4",
     "react": "19.1.1",
     "react-native": "0.82.1",
+    "react-native-android-location-enabler": "^3.0.1",
+    "react-native-android-location-services-dialog-box": "^2.8.2",
     "react-native-bootsplash": "^6.3.11",
     "react-native-gesture-handler": "^2.29.1",
     "react-native-safe-area-context": "^5.6.2",
