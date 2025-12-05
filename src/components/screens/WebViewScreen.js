@@ -80,16 +80,6 @@ const WebViewScreen = () => {
   };
   const requestWifiScan = async () => {
     try {
-      // // 1️⃣ Request permission
-      // const granted = await PermissionsAndroid.request(
-      //   PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-      // );
-
-      // if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-      //   sendToWeb({ error: 'Location permission denied' });
-      //   return;
-      // }
-
       const locationReady = await checkAndAskLocation();
       if (!locationReady) return;
 
@@ -104,11 +94,44 @@ const WebViewScreen = () => {
     }
   };
 
+  // const onWebMessage = event => {
+  //   try {
+  //     const message = JSON.parse(event.nativeEvent.data);
+  //     if (message.action === 'SCAN_WIFI') {
+  //       requestWifiScan();
+  //     }
+  //   } catch (err) {
+  //     console.log('Bad message from web:', err);
+  //   }
+  // };
+
   const onWebMessage = event => {
     try {
       const message = JSON.parse(event.nativeEvent.data);
-      if (message.action === 'SCAN_WIFI') {
-        requestWifiScan();
+
+      switch (message.action) {
+        case 'SCAN_WIFI':
+          requestWifiScan();
+          break;
+
+        case 'GET_SYSTEM_STATUS':
+          getSystemStatus();
+          break;
+
+        case 'CONNECT_WIFI':
+          if (message.ssid) {
+            connectToWifi(message.ssid);
+          } else {
+            sendToWeb({
+              action: 'WIFI_CONNECT_RESULT',
+              success: false,
+              error: 'SSID and password required',
+            });
+          }
+          break;
+
+        default:
+          console.log('Unknown action:', message.action);
       }
     } catch (err) {
       console.log('Bad message from web:', err);
@@ -118,10 +141,118 @@ const WebViewScreen = () => {
   const sendToWeb = data => {
     webviewRef.current?.postMessage(JSON.stringify(data));
   };
+
+  const getCurrentWifiInfo = async () => {
+    try {
+      const ssid = await WifiManager.getCurrentWifiSSID();
+      // Note: For security reasons, Android 10+ doesn't allow apps to retrieve WiFi passwords
+      // Only system apps or rooted devices can access this
+      return {
+        ssid: ssid,
+        password: null, // Cannot retrieve password on modern Android
+        note: 'Password retrieval not available on Android 10+',
+      };
+    } catch (e) {
+      return {
+        ssid: null,
+        password: null,
+        error: e.toString(),
+      };
+    }
+  };
+
+  const getMobileDataStatus = async () => {
+    try {
+      const state = await NetInfo.fetch();
+      return {
+        isMobileDataEnabled: state.type === 'cellular' && state.isConnected,
+        connectionType: state.type,
+        isConnected: state.isConnected,
+      };
+    } catch (e) {
+      return {
+        isMobileDataEnabled: false,
+        error: e.toString(),
+      };
+    }
+  };
+
+  const checkLocationPermission = async () => {
+    try {
+      const granted = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      );
+      return granted;
+    } catch (err) {
+      return false;
+    }
+  };
+
+  const getSystemStatus = async () => {
+    try {
+      const locationPermission = await checkLocationPermission();
+      const wifiInfo = await getCurrentWifiInfo();
+      // const mobileDataStatus = await getMobileDataStatus();
+
+      sendToWeb({
+        action: 'SYSTEM_STATUS',
+        data: {
+          locationPermission,
+          currentWifi: wifiInfo,
+          // mobileData: mobileDataStatus,
+        },
+      });
+    } catch (e) {
+      sendToWeb({
+        action: 'SYSTEM_STATUS',
+        error: e.toString(),
+      });
+    }
+  };
+
+  const connectToWifi = async (ssid) => {
+    try {
+      const locationReady = await checkAndAskLocation();
+      if (!locationReady) {
+        sendToWeb({
+          action: 'WIFI_CONNECT_RESULT',
+          success: false,
+          error: 'Location permission required',
+        });
+        return;
+      }
+
+      // Connect to WiFi
+      await WifiManager.connectToProtectedSSID(ssid,'12345678',false, false);
+
+      // Wait a bit and verify connection
+      setTimeout(async () => {
+        const connectedSSID = await WifiManager.getCurrentWifiSSID();
+        const success = connectedSSID === ssid;
+
+        sendToWeb({
+          action: 'WIFI_CONNECT_RESULT',
+          success,
+          ssid: connectedSSID,
+          message: success
+            ? `Connected to ${ssid}`
+            : 'Connection failed or timed out',
+        });
+      }, 3000);
+    } catch (e) {
+      sendToWeb({
+        action: 'WIFI_CONNECT_RESULT',
+        success: false,
+        error: e.toString(),
+      });
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <WebView
         ref={webviewRef}
+        mixedContentMode="always"
         onMessage={onWebMessage}
         source={{ uri: 'https://atlas.smartgeoapps.com/smartecodev' }}
         style={{ flex: 1 }}
