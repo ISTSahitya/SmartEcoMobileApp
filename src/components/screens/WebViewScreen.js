@@ -1,11 +1,13 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { PermissionsAndroid, BackHandler, Alert, Linking } from 'react-native';
-import { StyleSheet, SafeAreaView } from 'react-native';
+import { PermissionsAndroid, BackHandler, Alert, Linking, Platform, StatusBar, View } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 import WifiManager from 'react-native-wifi-reborn';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
 
 const WebViewScreen = () => {
+  const insets = useSafeAreaInsets();
   const [history, setHistory] = useState([]);
   const [currentUrl, setCurrentUrl] = useState(null);
   useEffect(() => {
@@ -249,13 +251,19 @@ const WebViewScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor="transparent"
+        translucent={true}
+      />
       <WebView
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
         source={{ uri: 'https://atlas.smartgeoapps.com/smartecodev' }}
-        style={{ flex: 1 }}
+        style={styles.webview}
+        contentInsetAdjustmentBehavior="automatic"
         onNavigationStateChange={navState => {
           const url = navState.url;
           setCurrentUrl(url);
@@ -267,7 +275,7 @@ const WebViewScreen = () => {
           });
         }}
       />
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -275,6 +283,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  webview: {
+    flex: 1,
   },
 });
 

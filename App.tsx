@@ -7,16 +7,16 @@
 
 import { NewAppScreen } from '@react-native/new-app-screen';
 import { StatusBar, StyleSheet, useColorScheme, View,Text } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import  WebView  from 'react-native-webview';
 import AppNavigator from './src/navigation/AppNavigator';
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
 
   return (
-    
-     
+    <SafeAreaProvider>
       <AppContent />
-  
+    </SafeAreaProvider>
   );
 }
 
