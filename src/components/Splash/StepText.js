@@ -64,9 +64,10 @@ export default function StepText() {
       {/* Animated Text */}
       <Animated.Text
         style={{
-          color: "#8FFF44",
-          fontSize: 28.79,
-          fontWeight: "700",
+          color: "#fff",
+          fontSize: 32,
+          fontWeight: "500",
+          letterSpacing: 1,
           opacity: textFade,
           transform: [{ translateY: textSlide }],
         }}

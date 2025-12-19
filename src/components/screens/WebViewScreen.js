@@ -132,6 +132,14 @@ const WebViewScreen = () => {
           }
           break;
 
+        case 'OPEN_APP_SETTINGS':
+          if (Platform.OS === 'ios') {
+            Linking.openURL('app-settings:');
+          } else {
+            Linking.openSettings();
+          }
+          break;
+
         default:
           console.log('Unknown action:', message.action);
       }
@@ -225,7 +233,7 @@ const WebViewScreen = () => {
       }
 
       // Connect to WiFi
-      await WifiManager.connectToProtectedSSID(ssid,'12345678',false, false);
+      await WifiManager.connectToProtectedSSID(ssid, '12345678', false, false);
 
       // Wait a bit and verify connection
       setTimeout(async () => {
@@ -261,7 +269,7 @@ const WebViewScreen = () => {
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
-        source={{ uri: 'https://atlas.smartgeoapps.com/smartecodev' }}
+        source={{ uri: 'https://excluding-positioning-jar-inventory.trycloudflare.com/smartecodev' }}
         style={styles.webview}
         contentInsetAdjustmentBehavior="automatic"
         onNavigationStateChange={navState => {
