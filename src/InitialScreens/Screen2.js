@@ -20,7 +20,7 @@ function Screen2({ navigation }) {
                 <Text style={InitialScreensStyles.pageDescription}>Add and manage Smart Echo devices easily with quick, simple pairing.</Text>
             </View>
 
-            <Carousel />
+            <Carousel currentScreen={1} />
 
             <View style={InitialScreensStyles.buttonContainer}>
                 <Pressable onPress={() => navigation.replace("screen4")}>

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { View, Image, StyleSheet, Dimensions } from 'react-native'
 import FirstImage from '../assets/images/CarouselImage1.png';
 import SecondImage from '../assets/images/CarouselImage2.png';
@@ -13,7 +13,9 @@ const carouselItems = [
     { id: 4, image: 'Fourth Image', imageSrc: FourthImage }
 ]
 
-function Carousel() {
+const { width } = Dimensions.get('screen');
+
+function Carousel({ currentScreen }) {
     const scrollX = useSharedValue(0);
     const flatListRef = useRef(null);
     const [data, setData] = useState(carouselItems);
@@ -30,6 +32,16 @@ function Carousel() {
             setPaginationIndex(viewableItems[0].index % carouselItems.length);
         }
     };
+
+    useEffect(() => {
+        flatListRef?.current?.scrollToIndex({
+            index: currentScreen,
+            animated: true,
+        });
+
+        setPaginationIndex(currentScreen)
+    }, [])
+
 
     /* ------------------ AUTOPLAY ------------------ */
     // useEffect(() => {
@@ -60,6 +72,11 @@ function Carousel() {
                 scrollEventThrottle={16}
                 showsHorizontalScrollIndicator={false}
                 pagingEnabled
+                getItemLayout={(_, index)=>({
+                    index,
+                    length: width,
+                    offset: width * index
+                })}
                 onScroll={handleScrollHandler}
                 decelerationRate={'fast'}
                 onViewableItemsChanged={onViewableItemsChanged}
@@ -72,7 +89,6 @@ function Carousel() {
     )
 }
 
-const { width } = Dimensions.get('screen');
 
 const SlideItem = ({ item, index, scrollX }) => {
 

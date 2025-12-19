@@ -27,7 +27,7 @@ function Screen4({ navigation }) {
                 <Text style={InitialScreensStyles.pageDescription}>Stay informed with automatic alerts when something needs your attention.</Text>
             </View>
 
-            <Carousel />
+            <Carousel currentScreen={3} />
 
             <View style={[InitialScreensStyles.buttonContainer, {justifyContent: 'center'}]}>
                 <GradientNextButton title='Get Started' onPress={handleStartClick} />

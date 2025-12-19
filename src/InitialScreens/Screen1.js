@@ -20,7 +20,7 @@ function Screen1({ navigation }) {
         <Text style={InitialScreensStyles.pageDescription}>Your all-in-one platform to monitor, control, and optimize your smart devices.</Text>
       </View>
 
-      <Carousel />
+      <Carousel currentScreen={0} />
 
       <View style={InitialScreensStyles.buttonContainer}>
 

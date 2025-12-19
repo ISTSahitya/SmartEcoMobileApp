@@ -20,7 +20,7 @@ function Screen3({ navigation }) {
                 <Text style={InitialScreensStyles.pageDescription}>Track energy usage, environmental conditions, and device performance—all in one dashboard.</Text>
             </View>
 
-            <Carousel />
+            <Carousel currentScreen={2} />
 
             <View style={InitialScreensStyles.buttonContainer}>
                 <Pressable onPress={() => navigation.replace("screen4")}>
