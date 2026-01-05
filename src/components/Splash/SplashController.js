@@ -23,13 +23,13 @@ export default function SplashController({ navigation }) {
 
   init().finally(() => {
     setTimeout(() => setStep(2), 300);
-    setTimeout(() => setStep(3), 3000);
-    setTimeout(() => setStep(4), 6000);
-    setTimeout(() => setStep(5), 6500);
+    setTimeout(() => setStep(3), 2000);
+    setTimeout(() => setStep(4), 5000);
+    setTimeout(() => setStep(5), 5500);
 
     setTimeout(() => {
       navigation.replace(targetScreen); 
-    }, 10000);
+    }, 10500);
   });
 }, []);
 

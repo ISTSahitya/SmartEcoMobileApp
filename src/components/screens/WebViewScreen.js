@@ -122,7 +122,8 @@ const WebViewScreen = () => {
 
         case 'CONNECT_WIFI':
           if (message.ssid) {
-            connectToWifi(message.ssid);
+            const { ssid, password } = message;
+            connectToWifi(ssid, password);
           } else {
             sendToWeb({
               action: 'WIFI_CONNECT_RESULT',
@@ -220,7 +221,7 @@ const WebViewScreen = () => {
     }
   };
 
-  const connectToWifi = async (ssid) => {
+  const connectToWifi = async (ssid, password) => {
     try {
       const locationReady = await checkAndAskLocation();
       if (!locationReady) {
@@ -233,7 +234,8 @@ const WebViewScreen = () => {
       }
 
       // Connect to WiFi
-      await WifiManager.connectToProtectedSSID(ssid, '12345678', false, false);
+      const wifiConnection = await WifiManager.connectToProtectedSSID(ssid, password, false, false);
+      // console.log("Connecting to WiFi-3");
 
       // Wait a bit and verify connection
       setTimeout(async () => {
@@ -243,7 +245,11 @@ const WebViewScreen = () => {
         sendToWeb({
           action: 'WIFI_CONNECT_RESULT',
           success,
-          ssid: connectedSSID,
+          currentWifi: {
+            ssid: connectedSSID,
+            password: password,
+            note: "Wifi details"
+          },
           message: success
             ? `Connected to ${ssid}`
             : 'Connection failed or timed out',
@@ -269,7 +275,7 @@ const WebViewScreen = () => {
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
-        source={{ uri: 'https://excluding-positioning-jar-inventory.trycloudflare.com/smartecodev' }}
+        source={{ uri: 'https://diamonds-vector-granny-ran.trycloudflare.com/smartecodev' }}
         style={styles.webview}
         contentInsetAdjustmentBehavior="automatic"
         onNavigationStateChange={navState => {

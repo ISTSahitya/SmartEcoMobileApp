@@ -50,7 +50,7 @@ export default InitialScreensStyles = StyleSheet.create({
         fontWeight: 700,
     },
 
-    skipButton:{
+    skipButton: {
         fontWeight: 300,
         fontSize: 16,
         textAlign: 'center',
