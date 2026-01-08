@@ -80,19 +80,39 @@ const WebViewScreen = () => {
       return false;
     }
   };
+
+  //Requesting wifi scan for getting any wifi connected
   const requestWifiScan = async () => {
     try {
       const locationReady = await checkAndAskLocation();
       if (!locationReady) return;
 
       // 3️⃣ Now scan WiFi
-      const wifiList = await WifiManager.loadWifiList();
-      sendToWeb({
-        action: 'WIFI_SCAN_RESULT',
-        networks: wifiList,
-      });
+      const connectedSSID = await getCurrentWifiInfo();
+      if (connectedSSID.ssid) {
+        sendToWeb({
+          action: 'WIFI_CONNECT_RESULT',
+          success: true,
+          currentWifi: {
+            ssid: connectedSSID.ssid,
+          }
+        });
+      } else {
+        sendToWeb({
+          action: "WIFI_CONNECT_RESULT",
+          currentWifi: {
+            ssid: "No wifi connected"
+          },
+          success: false,
+          error: 'Connection failed. Please try again...'
+        })
+      }
     } catch (e) {
-      sendToWeb({ error: e.toString() });
+      sendToWeb({
+          action: 'WIFI_CONNECT_RESULT',
+          success: false,
+          error: 'Connection timeout. Please try again...'
+        });
     }
   };
 
@@ -120,18 +140,18 @@ const WebViewScreen = () => {
           getSystemStatus();
           break;
 
-        case 'CONNECT_WIFI':
-          if (message.ssid) {
-            const { ssid, password } = message;
-            connectToWifi(ssid, password);
-          } else {
-            sendToWeb({
-              action: 'WIFI_CONNECT_RESULT',
-              success: false,
-              error: 'SSID and password required',
-            });
-          }
-          break;
+        // case 'CONNECT_WIFI':
+        //   if (message.ssid) {
+        //     const { ssid, password } = message;
+        //     connectToWifi(ssid, password);
+        //   } else {
+        //     sendToWeb({
+        //       action: 'WIFI_CONNECT_RESULT',
+        //       success: false,
+        //       error: 'SSID and password required',
+        //     });
+        //   }
+        //   break;
 
         case 'OPEN_APP_SETTINGS':
           if (Platform.OS === 'ios') {
@@ -141,11 +161,53 @@ const WebViewScreen = () => {
           }
           break;
 
+        case 'OPEN_WIFI_SETTINGS':
+          if (Platform.OS === "android") {
+            Linking.sendIntent("android.settings.WIFI_SETTINGS");
+          
+          setTimeout(() => {
+              checkWifiConnection();
+            }, 6000);
+          } else {
+            Alert.alert(
+              "Enable Wi-Fi",
+              "Please enable Wi-Fi from Settings",
+              [
+                { text: "Cancel", style: "cancel" },
+                { text: "Open Settings", onPress: () => Linking.sendIntent("android.settings.WIFI_SETTINGS") },
+              ]
+            );
+          }
+
+          break;
+
         default:
           console.log('Unknown action:', message.action);
       }
     } catch (err) {
       console.log('Bad message from web:', err);
+    }
+  };
+
+  const checkWifiConnection = async () => {
+    const connectedSSID = (await getCurrentWifiInfo()).ssid ?? "Iaq_";
+    if (connectedSSID != null && (connectedSSID.startsWith("IAQ_") || connectedSSID.startsWith("iaq_") || connectedSSID.startsWith("Iaq_"))) {
+      sendToWeb({
+        action: "DEVICE_WIFI_CONNECTED",
+        currentWifi: {
+          ssid: connectedSSID
+        },
+        success: true
+      })
+    } else {
+      sendToWeb({
+        action: "DEVICE_WIFI_CONNECTED",
+        currentWifi: {
+          ssid: "No wifi connected"
+        },
+        success: false,
+        error: 'Connection failed. Please try again...'
+      })
     }
   };
 
@@ -221,48 +283,47 @@ const WebViewScreen = () => {
     }
   };
 
-  const connectToWifi = async (ssid, password) => {
-    try {
-      const locationReady = await checkAndAskLocation();
-      if (!locationReady) {
-        sendToWeb({
-          action: 'WIFI_CONNECT_RESULT',
-          success: false,
-          error: 'Location permission required',
-        });
-        return;
-      }
+  // const connectToWifi = async (ssid, password) => {
+  //   try {
+  //     const locationReady = await checkAndAskLocation();
+  //     if (!locationReady) {
+  //       sendToWeb({
+  //         action: 'WIFI_CONNECT_RESULT',
+  //         success: false,
+  //         error: 'Location permission required',
+  //       });
+  //       return;
+  //     }
 
-      // Connect to WiFi
-      const wifiConnection = await WifiManager.connectToProtectedSSID(ssid, password, false, false);
-      // console.log("Connecting to WiFi-3");
+  //     // Connect to WiFi
+  //     await WifiManager.connectToProtectedSSID(ssid, password, false, false);
 
-      // Wait a bit and verify connection
-      setTimeout(async () => {
-        const connectedSSID = await WifiManager.getCurrentWifiSSID();
-        const success = connectedSSID === ssid;
+  //     // Wait a bit and verify connection
+  //     setTimeout(async () => {
+  //       const connectedSSID = await WifiManager.getCurrentWifiSSID();
+  //       const success = connectedSSID === ssid;
 
-        sendToWeb({
-          action: 'WIFI_CONNECT_RESULT',
-          success,
-          currentWifi: {
-            ssid: connectedSSID,
-            password: password,
-            note: "Wifi details"
-          },
-          message: success
-            ? `Connected to ${ssid}`
-            : 'Connection failed or timed out',
-        });
-      }, 3000);
-    } catch (e) {
-      sendToWeb({
-        action: 'WIFI_CONNECT_RESULT',
-        success: false,
-        error: e.toString(),
-      });
-    }
-  };
+  //       sendToWeb({
+  //         action: 'WIFI_CONNECT_RESULT',
+  //         success,
+  //         currentWifi: {
+  //           ssid: connectedSSID,
+  //           password: password,
+  //           note: "Wifi details"
+  //         },
+  //         message: success
+  //           ? `Connected to ${ssid}`
+  //           : 'Connection failed or timed out',
+  //       });
+  //     }, 3000);
+  //   } catch (e) {
+  //     sendToWeb({
+  //       action: 'WIFI_CONNECT_RESULT',
+  //       success: false,
+  //       error: e.toString(),
+  //     });
+  //   }
+  // };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
@@ -275,7 +336,7 @@ const WebViewScreen = () => {
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
-        source={{ uri: 'https://diamonds-vector-granny-ran.trycloudflare.com/smartecodev' }}
+        source={{ uri: 'https://articles-formed-url-browser.trycloudflare.com/smartecodev' }}
         style={styles.webview}
         contentInsetAdjustmentBehavior="automatic"
         onNavigationStateChange={navState => {
