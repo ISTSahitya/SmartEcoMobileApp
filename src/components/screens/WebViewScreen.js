@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 import WifiManager from 'react-native-wifi-reborn';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
+import NetInfo from "@react-native-community/netinfo";
 
 const WebViewScreen = () => {
   const insets = useSafeAreaInsets();
@@ -137,7 +138,12 @@ const WebViewScreen = () => {
           break;
 
         case 'GET_SYSTEM_STATUS':
-          getSystemStatus();
+          const interval = setInterval(async () => {
+            const systemStatus = await getSystemStatus();
+            if (systemStatus.success && systemStatus.locationPermission && !systemStatus.mobileData) {
+              clearInterval(interval);
+            }
+          }, 3000);
           break;
 
         // case 'CONNECT_WIFI':
@@ -264,22 +270,28 @@ const WebViewScreen = () => {
   const getSystemStatus = async () => {
     try {
       const locationPermission = await checkLocationPermission();
-      const wifiInfo = await getCurrentWifiInfo();
-      // const mobileDataStatus = await getMobileDataStatus();
+      const mobileDataStatus = await getMobileDataStatus();
 
       sendToWeb({
         action: 'SYSTEM_STATUS',
         data: {
           locationPermission,
-          currentWifi: wifiInfo,
-          // mobileData: mobileDataStatus,
+          mobileData: mobileDataStatus.isMobileDataEnabled,
         },
       });
+      return {
+        success: true,
+        locationPermission,
+        mobileData: mobileDataStatus.isMobileDataEnabled
+      }
     } catch (e) {
       sendToWeb({
         action: 'SYSTEM_STATUS',
         error: e.toString(),
       });
+      return {
+        success: false
+      }
     }
   };
 
