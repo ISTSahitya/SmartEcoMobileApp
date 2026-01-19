@@ -250,7 +250,7 @@ const WebViewScreen = () => {
       };
     } catch (e) {
       return {
-        isMobileDataEnabled: false,
+        isMobileDataEnabled: true,
         error: e.toString(),
       };
     }
