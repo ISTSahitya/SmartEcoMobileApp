@@ -1,4 +1,4 @@
-package com.smarteco.mobile
+package com.smarteco.app
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
