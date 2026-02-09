@@ -168,22 +168,34 @@ const WebViewScreen = () => {
           break;
 
         case 'OPEN_WIFI_SETTINGS':
-          if (Platform.OS === "android") {
-            Linking.sendIntent("android.settings.WIFI_SETTINGS");
-          
-          setTimeout(() => {
+          if (Platform.OS === 'android') {
+            Linking.sendIntent('android.settings.WIFI_SETTINGS');
+
+            setTimeout(() => {
               checkWifiConnection();
             }, 6000);
           } else {
-            Alert.alert(
-              "Enable Wi-Fi",
-              "Please enable Wi-Fi from Settings",
-              [
-                { text: "Cancel", style: "cancel" },
-                { text: "Open Settings", onPress: () => Linking.sendIntent("android.settings.WIFI_SETTINGS") },
-              ]
-            );
+            Alert.alert('Enable Wi-Fi', 'Please enable Wi-Fi from Settings', [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Open Settings',
+                onPress: () =>
+                  Linking.sendIntent('android.settings.WIFI_SETTINGS'),
+              },
+            ]);
           }
+
+          break;
+
+        case 'GET_IS_IOS':
+          let isIOS = false;
+          if (Platform.OS === 'ios') {
+            isIOS = true;
+          }
+          sendToWeb({
+            action: 'IS_IOS',
+            isIOS,
+          });
 
           break;
 
