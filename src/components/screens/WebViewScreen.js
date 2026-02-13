@@ -398,7 +398,7 @@ const WebViewScreen = () => {
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
-        source={{ uri: 'https://definitely-european-lean-gardening.trycloudflare.com/smartecodev' }}
+        source={{ uri: 'https://atlas.smartgeoapps.com/smartecodev' }}
         style={styles.webview}
         contentInsetAdjustmentBehavior="automatic"
         onNavigationStateChange={navState => {
