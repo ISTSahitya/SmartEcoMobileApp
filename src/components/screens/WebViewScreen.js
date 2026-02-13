@@ -11,6 +11,44 @@ const WebViewScreen = () => {
   const insets = useSafeAreaInsets();
   const [history, setHistory] = useState([]);
   const [currentUrl, setCurrentUrl] = useState(null);
+
+  /* deeplink setup for oauth login */
+  useEffect(() => {
+    const handleDeepLink = ({ url }) => {
+      console.log("Deep link received:", url);
+      const parsedUrl = new URL(url);
+      const token = parsedUrl.searchParams.get("token");
+      const error = parsedUrl.searchParams.get("error");
+      const state = parsedUrl.searchParams.get("state");
+      const code = parsedUrl.searchParams.get("code");
+
+      if (error) {
+        sendToWeb({
+          type: "OAUTH_ERROR",
+          error,
+        });
+        return;
+      }
+
+      if (token || code) {
+        sendToWeb({
+          type: "OAUTH_SUCCESS",
+          access_token: token || undefined,
+          code: code || undefined,
+          state: state || undefined,
+        });
+        return;
+      }
+        
+    };
+
+    Linking.addEventListener('url', handleDeepLink);
+
+    return () => {
+      Linking.removeAllListeners('url');
+    };
+}, []);
+
   useEffect(() => {
     const backHandler = BackHandler.addEventListener(
       'hardwareBackPress',
@@ -360,7 +398,7 @@ const WebViewScreen = () => {
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
-        source={{ uri: 'https://atlas.smartgeoapps.com/smartecodev' }}
+        source={{ uri: 'https://definitely-european-lean-gardening.trycloudflare.com/smartecodev' }}
         style={styles.webview}
         contentInsetAdjustmentBehavior="automatic"
         onNavigationStateChange={navState => {

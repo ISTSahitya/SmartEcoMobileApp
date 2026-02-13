@@ -10,8 +10,18 @@ import InitialNavigator from '../navigation/InitialNavigator';
 const Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
+
+  const linking = {
+    prefixes: ["smarteco://"],
+    config: {
+      screens: {
+        WebView: "oauth-success", // deep link target
+      },
+    },
+  };
+
   return (
-    <NavigationContainer>
+    <NavigationContainer linking={linking}>
       <Stack.Navigator 
         screenOptions={{ headerShown: false }}
         initialRouteName="Splash"
