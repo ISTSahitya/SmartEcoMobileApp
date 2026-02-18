@@ -15,7 +15,9 @@ const WebViewScreen = () => {
   /* deeplink setup for oauth login */
   useEffect(() => {
     const handleDeepLink = ({ url }) => {
+    try {
       console.log("Deep link received:", url);
+
       const parsedUrl = new URL(url);
       const token = parsedUrl.searchParams.get("token");
       const error = parsedUrl.searchParams.get("error");
@@ -23,10 +25,7 @@ const WebViewScreen = () => {
       const code = parsedUrl.searchParams.get("code");
 
       if (error) {
-        sendToWeb({
-          type: "OAUTH_ERROR",
-          error,
-        });
+        sendToWeb({ type: "OAUTH_ERROR", error });
         return;
       }
 
@@ -37,15 +36,17 @@ const WebViewScreen = () => {
           code: code || undefined,
           state: state || undefined,
         });
-        return;
       }
-        
-    };
-
-    Linking.addEventListener('url', handleDeepLink);
+    }
+     catch (e) {
+      console.log("Deep link parse error:", e);
+      sendToWeb({ type: "OAUTH_ERROR", error : 'Internal server error' });
+    }
+  }
+    const urlSubscription = Linking.addEventListener('url', handleDeepLink);
 
     return () => {
-      Linking.removeAllListeners('url');
+      urlSubscription.remove();
     };
 }, []);
 
@@ -411,6 +412,12 @@ const WebViewScreen = () => {
             return prev;
           });
         }}
+        // onError={(e) => {
+        //   console.log("WEBVIEW ERROR", e.nativeEvent);
+        // }}
+        // onHttpError={(e) => {
+        //   console.log("HTTP ERROR", e.nativeEvent);
+        // }}
       />
     </View>
   );
