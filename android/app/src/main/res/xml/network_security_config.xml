@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">esp32.local</domain>
+    </domain-config>
+
+    <!-- fallback: allow all cleartext if needed during dev -->
+    <!-- <base-config cleartextTrafficPermitted="true" /> -->
+</network-security-config>
