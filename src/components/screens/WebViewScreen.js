@@ -9,8 +9,7 @@ import NetInfo from "@react-native-community/netinfo";
 
 const WebViewScreen = () => {
   const insets = useSafeAreaInsets();
-  const [history, setHistory] = useState([]);
-  const [currentUrl, setCurrentUrl] = useState(null);
+  const [canGoBack, setCanGoBack] = useState(false);
 
   /* deeplink setup for oauth login */
   useEffect(() => {
@@ -50,31 +49,22 @@ const WebViewScreen = () => {
     };
 }, []);
 
+  // 
   useEffect(() => {
     const backHandler = BackHandler.addEventListener(
       'hardwareBackPress',
       () => {
-        if (history.length > 1) {
-          const prevUrl = history[history.length - 2];
-          // first goBack()
+        if (canGoBack) {
           webviewRef.current.goBack();
-
-          // 🔥 check after slight delay if URL is same
-          setTimeout(() => {
-            if (currentUrl === prevUrl) {
-              // If same URL → still same page → goBack() again
-              webviewRef.current.goBack();
-            }
-          }, 200);
-
           return true;
         }
         return false; // allow app exit
-      },
+      }
     );
 
-    return () => backHandler.remove();
-  }, [history, currentUrl]);
+  return () => backHandler.remove();
+}, [canGoBack]);
+
   const webviewRef = useRef(null);
   const checkAndAskLocation = async () => {
     // 1. Request location permission
@@ -402,15 +392,8 @@ const WebViewScreen = () => {
         source={{ uri: 'https://atlas.smartgeoapps.com/smartecodev' }}
         style={styles.webview}
         contentInsetAdjustmentBehavior="automatic"
-        onNavigationStateChange={navState => {
-          const url = navState.url;
-          setCurrentUrl(url);
-          setHistory(prev => {
-            if (prev[prev.length - 1] !== url) {
-              return [...prev, url];
-            }
-            return prev;
-          });
+        onNavigationStateChange={(navState) => {
+          setCanGoBack(navState.canGoBack);
         }}
         // onError={(e) => {
         //   console.log("WEBVIEW ERROR", e.nativeEvent);
