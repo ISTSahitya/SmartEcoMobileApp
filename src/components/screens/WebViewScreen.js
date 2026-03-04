@@ -217,6 +217,23 @@ const WebViewScreen = () => {
 
           break;
 
+        case 'OPEN_WIFI_SETTINGS_FOR_NO_INTERNET':
+          if (Platform.OS === 'android') {
+            Linking.sendIntent('android.settings.WIFI_SETTINGS');
+
+          } else {
+            Alert.alert('Enable Wi-Fi', 'Please enable Wi-Fi from Settings', [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Open Settings',
+                onPress: () =>
+                  Linking.sendIntent('android.settings.WIFI_SETTINGS'),
+              },
+            ]);
+          }
+
+          break;
+
         case 'GET_IS_IOS':
           let isIOS = false;
           if (Platform.OS === 'ios') {
