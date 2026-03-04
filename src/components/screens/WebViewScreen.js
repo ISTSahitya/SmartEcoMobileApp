@@ -6,6 +6,7 @@ import WebView from 'react-native-webview';
 import WifiManager from 'react-native-wifi-reborn';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
 import NetInfo from "@react-native-community/netinfo";
+import { NativeModules } from 'react-native';
 
 const WebViewScreen = () => {
   const insets = useSafeAreaInsets();
@@ -283,15 +284,13 @@ const WebViewScreen = () => {
 
   const getMobileDataStatus = async () => {
     try {
-      const state = await NetInfo.fetch();
+      const isMobileDataEnabled = await NativeModules.MobileDataModule.isMobileDataEnabled();
       return {
-        isMobileDataEnabled: state.type === 'cellular' && state.isConnected,
-        connectionType: state.type,
-        isConnected: state.isConnected,
+        isMobileDataEnabled,
       };
     } catch (e) {
       return {
-        isMobileDataEnabled: true,
+        isMobileDataEnabled: false,
         error: e.toString(),
       };
     }
@@ -312,7 +311,7 @@ const WebViewScreen = () => {
     try {
       const locationPermission = await checkLocationPermission();
       const mobileDataStatus = await getMobileDataStatus();
-
+      console.log("mobileDataStatus", mobileDataStatus);
       sendToWeb({
         action: 'SYSTEM_STATUS',
         data: {
