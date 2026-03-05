@@ -333,10 +333,8 @@ const WebViewScreen = () => {
     try {
       const locationPermission = await checkLocationPermission();
       const mobileDataStatus = await getMobileDataStatus();
-      const isVpnOn = checkVpn();
+      const isVpnOn = await checkVpn();
 
-      console.log("mobileDataStatus", mobileDataStatus);
-      console.log("isVpnOn", isVpnOn);
 
       sendToWeb({
         action: 'SYSTEM_STATUS',
