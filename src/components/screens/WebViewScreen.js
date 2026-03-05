@@ -1,12 +1,11 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { PermissionsAndroid, BackHandler, Alert, Linking, Platform, StatusBar, View } from 'react-native';
+import { PermissionsAndroid, BackHandler, Alert, Linking, Platform, StatusBar, View, NativeModules } from 'react-native';
 import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 import WifiManager from 'react-native-wifi-reborn';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
-import NetInfo from "@react-native-community/netinfo";
-import { NativeModules } from 'react-native';
+const { VpnModule } = NativeModules;
 
 const WebViewScreen = () => {
   const insets = useSafeAreaInsets();
@@ -170,7 +169,7 @@ const WebViewScreen = () => {
         case 'GET_SYSTEM_STATUS':
           const interval = setInterval(async () => {
             const systemStatus = await getSystemStatus();
-            if (systemStatus.success && systemStatus.locationPermission && !systemStatus.mobileData) {
+            if (systemStatus.success && systemStatus.locationPermission && !systemStatus.mobileData && !systemStatus.isVpnOn) {
               clearInterval(interval);
             }
           }, 3000);
@@ -306,6 +305,7 @@ const WebViewScreen = () => {
         isMobileDataEnabled,
       };
     } catch (e) {
+      console.log("Error while getting modile sta status")
       return {
         isMobileDataEnabled: false,
         error: e.toString(),
@@ -324,22 +324,33 @@ const WebViewScreen = () => {
     }
   };
 
+  const checkVpn = async () => {
+    const isVpnActive = await VpnModule.isVpnActive();
+    return isVpnActive;
+  };
+
   const getSystemStatus = async () => {
     try {
       const locationPermission = await checkLocationPermission();
       const mobileDataStatus = await getMobileDataStatus();
+      const isVpnOn = checkVpn();
+
       console.log("mobileDataStatus", mobileDataStatus);
+      console.log("isVpnOn", isVpnOn);
+
       sendToWeb({
         action: 'SYSTEM_STATUS',
         data: {
           locationPermission,
           mobileData: mobileDataStatus.isMobileDataEnabled,
+          isVpnOn
         },
       });
       return {
         success: true,
         locationPermission,
-        mobileData: mobileDataStatus.isMobileDataEnabled
+        mobileData: mobileDataStatus.isMobileDataEnabled,
+        isVpnOn
       }
     } catch (e) {
       sendToWeb({
