@@ -82,8 +82,8 @@ android {
         applicationId "com.smarteco.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
-        versionName "8.0"
+        versionCode 12
+        versionName "12"
     }
     signingConfigs {
         debug {

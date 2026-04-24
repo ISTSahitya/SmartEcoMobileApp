@@ -414,7 +414,7 @@ const WebViewScreen = () => {
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
-        source={{ uri: 'https://atlas.smartgeoapps.com/smartecodev' }}
+        source={{ uri: 'https://app.smarteco.ai/smartecoiaq/' }}
         style={styles.webview}
         contentInsetAdjustmentBehavior="automatic"
         onNavigationStateChange={(navState) => {
