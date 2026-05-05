@@ -1,12 +1,16 @@
-import { StyleSheet } from "react-native"
+import { Platform, StyleSheet } from "react-native"
 
 export default InitialScreensStyles = StyleSheet.create({
     container : {
         flex: 1,
+    },
+
+    safeArea: {
+        flex: 1,
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingBottom: 60,
-        paddingTop: 80
+        paddingTop: Platform.OS === 'ios' ? 30 : 80,
+        paddingBottom: Platform.OS === 'ios' ? 20 : 60,
     },
 
     header: {

@@ -1,5 +1,6 @@
 import React from 'react'
 import { View, Text, Pressable } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import InitialScreensStyles from '../styles/InitialScreensStyles'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import LinearGradient from 'react-native-linear-gradient';
@@ -22,16 +23,18 @@ function Screen4({ navigation }) {
             end={{ x: 0, y: 1 }}     // bottom
             style={InitialScreensStyles.container}
         >
-            <View style={InitialScreensStyles.header}>
-                <Text style={InitialScreensStyles.pageHeading}>Instant Notifications</Text>
-                <Text style={InitialScreensStyles.pageDescription}>Stay informed with automatic alerts when something needs your attention.</Text>
-            </View>
+            <SafeAreaView style={InitialScreensStyles.safeArea} edges={['top', 'bottom']}>
+                <View style={InitialScreensStyles.header}>
+                    <Text style={InitialScreensStyles.pageHeading}>Instant Notifications</Text>
+                    <Text style={InitialScreensStyles.pageDescription}>Stay informed with automatic alerts when something needs your attention.</Text>
+                </View>
 
-            <Carousel currentScreen={3} />
+                <Carousel currentScreen={3} />
 
-            <View style={[InitialScreensStyles.buttonContainer, {justifyContent: 'center'}]}>
-                <GradientNextButton title='Get Started' onPress={handleStartClick} />
-            </View>
+                <View style={[InitialScreensStyles.buttonContainer, {justifyContent: 'center'}]}>
+                    <GradientNextButton title='Get Started' onPress={handleStartClick} />
+                </View>
+            </SafeAreaView>
         </LinearGradient>
     );
 };

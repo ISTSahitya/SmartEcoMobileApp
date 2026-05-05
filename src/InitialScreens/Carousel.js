@@ -135,6 +135,9 @@ const Pagination = ({ paginationIndex }) => {
 const styles = StyleSheet.create({
 
     mainContainer: {
+        flexShrink: 1,
+        width: '100%',
+        maxHeight: 400,
         height: 400,
         gap: 10
     },
