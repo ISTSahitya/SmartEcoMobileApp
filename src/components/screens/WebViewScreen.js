@@ -1,15 +1,31 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { PermissionsAndroid, BackHandler, Alert, Linking, Platform, StatusBar, View, NativeModules } from 'react-native';
+import { PermissionsAndroid, BackHandler, Alert, Linking, Platform, StatusBar, View, NativeModules, AppState, ActivityIndicator, Image } from 'react-native';
 import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 import WifiManager from 'react-native-wifi-reborn';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
+import useVersionCheck from '../../hooks/useVersionCheck';
+import UpdateModal from '../UpdateModal';
+import LinearGradient from 'react-native-linear-gradient';
 const { VpnModule } = NativeModules;
 
 const WebViewScreen = () => {
   const insets = useSafeAreaInsets();
   const [canGoBack, setCanGoBack] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const { modalVisible, updateType, updateData, handleVersionData, dismiss, skipVersion } = useVersionCheck();
+  const lastVersionData = useRef(null);
+
+  // Re-check version when app comes to foreground
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active' && lastVersionData.current) {
+        handleVersionData(lastVersionData.current);
+      }
+    });
+    return () => subscription.remove();
+  }, [handleVersionData]);
 
   /* deeplink setup for oauth login */
   useEffect(() => {
@@ -162,6 +178,11 @@ const WebViewScreen = () => {
       const message = JSON.parse(event.nativeEvent.data);
 
       switch (message.action) {
+        case 'APP_VERSION_INFO':
+          lastVersionData.current = message.data;
+          handleVersionData(message.data);
+          break;
+
         case 'SCAN_WIFI':
           requestWifiScan();
           break;
@@ -417,15 +438,38 @@ const WebViewScreen = () => {
         source={{ uri: 'https://app.smarteco.ai/smartecoiaq/' }}
         style={styles.webview}
         contentInsetAdjustmentBehavior="automatic"
+        cacheEnabled={true}
+        cacheMode="LOAD_DEFAULT"
+        domStorageEnabled={true}
+        javaScriptEnabled={true}
+        startInLoadingState={false}
+        onLoadStart={() => setIsLoading(true)}
+        onLoadEnd={() => setIsLoading(false)}
         onNavigationStateChange={(navState) => {
           setCanGoBack(navState.canGoBack);
         }}
-        // onError={(e) => {
-        //   console.log("WEBVIEW ERROR", e.nativeEvent);
-        // }}
-        // onHttpError={(e) => {
-        //   console.log("HTTP ERROR", e.nativeEvent);
-        // }}
+      />
+      {isLoading && (
+        <LinearGradient
+          colors={['#0F796B', '#6FDC95']}
+          style={styles.loadingOverlay}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+        >
+          <Image
+            source={require('../../assets/images/logo_white.png')}
+            style={styles.loadingLogo}
+            resizeMode="contain"
+          />
+          <ActivityIndicator size="large" color="#fff" style={styles.loadingSpinner} />
+        </LinearGradient>
+      )}
+      <UpdateModal
+        visible={modalVisible}
+        type={updateType}
+        data={updateData}
+        onDismiss={dismiss}
+        onSkipVersion={skipVersion}
       />
     </View>
   );
@@ -438,6 +482,18 @@ const styles = StyleSheet.create({
   },
   webview: {
     flex: 1,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingLogo: {
+    width: 120,
+    height: 120,
+  },
+  loadingSpinner: {
+    marginTop: 24,
   },
 });
 
