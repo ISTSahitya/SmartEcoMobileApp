@@ -30,5 +30,17 @@ target 'Smart' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    installer.pods_project.targets.each do |target|
+      next unless target.name == 'RNScreens'
+
+      target.build_configurations.each do |build_config|
+        header_search_paths = build_config.build_settings['HEADER_SEARCH_PATHS'] || '$(inherited)'
+        paths = header_search_paths.is_a?(Array) ? header_search_paths : header_search_paths.split(' ')
+        generated_headers_path = '"$(PODS_ROOT)/../build/generated/ios"'
+        paths << generated_headers_path unless paths.include?(generated_headers_path)
+        build_config.build_settings['HEADER_SEARCH_PATHS'] = paths
+      end
+    end
   end
 end

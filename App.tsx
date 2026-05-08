@@ -5,14 +5,19 @@
  * @format
  */
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View,Text } from 'react-native';
+import { LogBox, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import  WebView  from 'react-native-webview';
 import AppNavigator from './src/navigation/AppNavigator';
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
 
+LogBox.ignoreLogs([
+  'Open debugger to view warnings',
+  'Unable to simultaneously satisfy constraints',
+  'Can only set suggestions for an active session',
+  'Failed to resolve host network app id to config',
+  'WebPageProxy::didFailProvisionalLoadForFrame',
+]);
+
+function App() {
   return (
     <SafeAreaProvider>
       <AppContent />

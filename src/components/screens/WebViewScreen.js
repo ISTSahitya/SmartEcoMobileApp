@@ -1,64 +1,44 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { PermissionsAndroid, BackHandler, Alert, Linking, Platform, StatusBar, View, NativeModules, AppState, ActivityIndicator, Image } from 'react-native';
+import { PermissionsAndroid, BackHandler, Alert, Linking, Platform, StatusBar, View, NativeModules, ActivityIndicator, Text } from 'react-native';
 import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 import WifiManager from 'react-native-wifi-reborn';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
-import useVersionCheck from '../../hooks/useVersionCheck';
-import UpdateModal from '../UpdateModal';
-import LinearGradient from 'react-native-linear-gradient';
-const { VpnModule } = NativeModules;
+const { VpnModule, LocationPermissionModule } = NativeModules;
+const WEB_APP_URL = 'https://app.smarteco.ai/smartecoiaq/';
+const WEB_APP_SOURCE = { uri: WEB_APP_URL };
+const OAUTH_CALLBACK_SCHEMES = ['smarteco://', 'smart://'];
+let webViewCanGoBack = false;
+
+const isOAuthCallbackUrl = url => {
+  const normalizedUrl = url?.toLowerCase();
+  return OAUTH_CALLBACK_SCHEMES.some(scheme => normalizedUrl?.startsWith(scheme));
+};
 
 const WebViewScreen = () => {
   const insets = useSafeAreaInsets();
-  const [canGoBack, setCanGoBack] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const { modalVisible, updateType, updateData, handleVersionData, dismiss, skipVersion } = useVersionCheck();
-  const lastVersionData = useRef(null);
-
-  // Re-check version when app comes to foreground
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active' && lastVersionData.current) {
-        handleVersionData(lastVersionData.current);
-      }
-    });
-    return () => subscription.remove();
-  }, [handleVersionData]);
+  const [canGoBack] = useState(false);
+  const [webSourceUri, setWebSourceUri] = useState(WEB_APP_URL);
+  const [isWebViewLoading, setIsWebViewLoading] = useState(true);
+  const [hasLoadedPage, setHasLoadedPage] = useState(false);
+  const pendingOAuthMessageRef = useRef(null);
+  const hasRequestedIosLocationRef = useRef(false);
+  const hasShownIosLocationAlertRef = useRef(false);
 
   /* deeplink setup for oauth login */
   useEffect(() => {
-    const handleDeepLink = ({ url }) => {
-    try {
-      console.log("Deep link received:", url);
-
-      const parsedUrl = new URL(url);
-      const token = parsedUrl.searchParams.get("token");
-      const error = parsedUrl.searchParams.get("error");
-      const state = parsedUrl.searchParams.get("state");
-      const code = parsedUrl.searchParams.get("code");
-
-      if (error) {
-        sendToWeb({ type: "OAUTH_ERROR", error });
-        return;
+    Linking.getInitialURL().then(url => {
+      if (isOAuthCallbackUrl(url)) {
+        handleOAuthCallback(url);
       }
+    });
 
-      if (token || code) {
-        sendToWeb({
-          type: "OAUTH_SUCCESS",
-          access_token: token || undefined,
-          code: code || undefined,
-          state: state || undefined,
-        });
+    const urlSubscription = Linking.addEventListener('url', ({ url }) => {
+      if (isOAuthCallbackUrl(url)) {
+        handleOAuthCallback(url);
       }
-    }
-     catch (e) {
-      console.log("Deep link parse error:", e);
-      sendToWeb({ type: "OAUTH_ERROR", error : 'Internal server error' });
-    }
-  }
-    const urlSubscription = Linking.addEventListener('url', handleDeepLink);
+    });
 
     return () => {
       urlSubscription.remove();
@@ -70,8 +50,8 @@ const WebViewScreen = () => {
     const backHandler = BackHandler.addEventListener(
       'hardwareBackPress',
       () => {
-        if (canGoBack) {
-          webviewRef.current.goBack();
+        if (webViewCanGoBack || canGoBack) {
+          webviewRef.current?.goBack();
           return true;
         }
         return false; // allow app exit
@@ -79,10 +59,27 @@ const WebViewScreen = () => {
     );
 
   return () => backHandler.remove();
-}, [canGoBack]);
+}, []);
 
   const webviewRef = useRef(null);
-  const checkAndAskLocation = async () => {
+  const checkAndAskLocation = async ({ showAlert = true } = {}) => {
+    if (Platform.OS === 'ios') {
+      hasRequestedIosLocationRef.current = true;
+      const granted = await LocationPermissionModule?.request?.();
+      if (!granted && showAlert && !hasShownIosLocationAlertRef.current) {
+        hasShownIosLocationAlertRef.current = true;
+        Alert.alert(
+          'Permission Required',
+          'Please allow Location Permission to detect your current Wi-Fi network.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openURL('app-settings:') },
+          ],
+        );
+      }
+      return !!granted;
+    }
+
     // 1. Request location permission
     const permission = await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
@@ -229,8 +226,7 @@ const WebViewScreen = () => {
               { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Open Settings',
-                onPress: () =>
-                  Linking.sendIntent('android.settings.WIFI_SETTINGS'),
+                onPress: () => Linking.openURL('app-settings:'),
               },
             ]);
           }
@@ -246,8 +242,7 @@ const WebViewScreen = () => {
               { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Open Settings',
-                onPress: () =>
-                  Linking.sendIntent('android.settings.WIFI_SETTINGS'),
+                onPress: () => Linking.openURL('app-settings:'),
               },
             ]);
           }
@@ -296,8 +291,65 @@ const WebViewScreen = () => {
     }
   };
 
-  const sendToWeb = data => {
-    webviewRef.current?.postMessage(JSON.stringify(data));
+  const handleOAuthCallback = url => {
+    try {
+      console.log("OAuth callback received:", url);
+
+      const parsedUrl = new URL(url);
+      const token = parsedUrl.searchParams.get("token");
+      const error = parsedUrl.searchParams.get("error");
+      const state = parsedUrl.searchParams.get("state");
+      const code = parsedUrl.searchParams.get("code");
+      const webCallbackUrl = buildWebOAuthCallbackUrl(url);
+
+      if (error) {
+        setWebSourceUri(webCallbackUrl);
+        sendToWeb({ type: "OAUTH_ERROR", action: "OAUTH_ERROR", error }, true);
+        return;
+      }
+
+      if (token || code) {
+        setWebSourceUri(webCallbackUrl);
+        sendToWeb({
+          type: "OAUTH_SUCCESS",
+          action: "OAUTH_SUCCESS",
+          access_token: token || undefined,
+          token: token || undefined,
+          code: code || undefined,
+          state: state || undefined,
+        }, true);
+      }
+    } catch (e) {
+      console.log("OAuth callback parse error:", e);
+      sendToWeb({ type: "OAUTH_ERROR", action: "OAUTH_ERROR", error: 'Internal server error' }, true);
+    }
+  };
+
+  const buildWebOAuthCallbackUrl = callbackUrl => {
+    const queryIndex = callbackUrl.indexOf('?');
+    const hashIndex = callbackUrl.indexOf('#');
+    const query = queryIndex >= 0 ? callbackUrl.slice(queryIndex, hashIndex >= 0 ? hashIndex : undefined) : '';
+    const hash = hashIndex >= 0 ? callbackUrl.slice(hashIndex) : '';
+
+    return `${WEB_APP_URL}oauth-success${query}${hash}`;
+  };
+
+  const sendToWeb = (data, retryOnLoad = false) => {
+    const payload = JSON.stringify(data);
+    if (retryOnLoad) {
+      pendingOAuthMessageRef.current = payload;
+    }
+    webviewRef.current?.postMessage(payload);
+  };
+
+  const handleWebViewLoadEnd = () => {
+    setIsWebViewLoading(false);
+    setHasLoadedPage(true);
+
+    if (pendingOAuthMessageRef.current) {
+      webviewRef.current?.postMessage(pendingOAuthMessageRef.current);
+      pendingOAuthMessageRef.current = null;
+    }
   };
 
   const getCurrentWifiInfo = async () => {
@@ -321,12 +373,18 @@ const WebViewScreen = () => {
 
   const getMobileDataStatus = async () => {
     try {
+      if (!NativeModules.MobileDataModule?.isMobileDataEnabled) {
+        return {
+          isMobileDataEnabled: false,
+        };
+      }
+
       const isMobileDataEnabled = await NativeModules.MobileDataModule.isMobileDataEnabled();
       return {
         isMobileDataEnabled,
       };
     } catch (e) {
-      console.log("Error while getting modile sta status")
+      console.log("Error while getting mobile data status", e?.message ?? e);
       return {
         isMobileDataEnabled: false,
         error: e.toString(),
@@ -336,6 +394,10 @@ const WebViewScreen = () => {
 
   const checkLocationPermission = async () => {
     try {
+      if (Platform.OS === 'ios') {
+        return !!(await LocationPermissionModule?.check?.());
+      }
+
       const granted = await PermissionsAndroid.check(
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
       );
@@ -346,13 +408,26 @@ const WebViewScreen = () => {
   };
 
   const checkVpn = async () => {
+    if (!VpnModule?.isVpnActive) {
+      return false;
+    }
+
     const isVpnActive = await VpnModule.isVpnActive();
     return isVpnActive;
   };
 
   const getSystemStatus = async () => {
     try {
-      const locationPermission = await checkLocationPermission();
+      let locationPermission;
+
+      if (Platform.OS === 'ios') {
+        locationPermission = hasRequestedIosLocationRef.current
+          ? await checkLocationPermission()
+          : await checkAndAskLocation({ showAlert: false });
+      } else {
+        locationPermission = await checkLocationPermission();
+      }
+
       const mobileDataStatus = await getMobileDataStatus();
       const isVpnOn = await checkVpn();
 
@@ -433,44 +508,43 @@ const WebViewScreen = () => {
       />
       <WebView
         ref={webviewRef}
+        originWhitelist={['http://*', 'https://*', 'smarteco://*', 'smart://*']}
         mixedContentMode="always"
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        allowsInlineMediaPlayback={true}
+        mediaCapturePermissionGrantType="grantIfSameHostElsePrompt"
+        sharedCookiesEnabled={true}
+        thirdPartyCookiesEnabled={true}
+        setSupportMultipleWindows={false}
         onMessage={onWebMessage}
-        source={{ uri: 'https://app.smarteco.ai/smartecoiaq/' }}
+        source={webSourceUri === WEB_APP_URL ? WEB_APP_SOURCE : { uri: webSourceUri }}
         style={styles.webview}
         contentInsetAdjustmentBehavior="automatic"
-        cacheEnabled={true}
-        cacheMode="LOAD_DEFAULT"
-        domStorageEnabled={true}
-        javaScriptEnabled={true}
-        startInLoadingState={false}
-        onLoadStart={() => setIsLoading(true)}
-        onLoadEnd={() => setIsLoading(false)}
-        onNavigationStateChange={(navState) => {
-          setCanGoBack(navState.canGoBack);
+        onLoadStart={() => setIsWebViewLoading(true)}
+        onLoadEnd={handleWebViewLoadEnd}
+        onShouldStartLoadWithRequest={request => {
+          console.log('[WebView request]', request.url);
+
+          if (isOAuthCallbackUrl(request.url)) {
+            handleOAuthCallback(request.url);
+            return false;
+          }
+
+          return true;
         }}
+        onNavigationStateChange={(navState) => {
+          console.log('[WebView nav]', navState.url);
+          webViewCanGoBack = navState.canGoBack;
+        }}
+       
       />
-      {isLoading && (
-        <LinearGradient
-          colors={['#0F796B', '#6FDC95']}
-          style={styles.loadingOverlay}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-        >
-          <Image
-            source={require('../../assets/images/logo_white.png')}
-            style={styles.loadingLogo}
-            resizeMode="contain"
-          />
-          <ActivityIndicator size="large" color="#fff" style={styles.loadingSpinner} />
-        </LinearGradient>
+      {isWebViewLoading && (
+        <View style={[styles.loaderOverlay, hasLoadedPage && styles.loaderOverlayAfterFirstLoad]}>
+          <ActivityIndicator size="large" color="#15947f" />
+          {!hasLoadedPage && <Text style={styles.loaderText}>Loading SmartEco...</Text>}
+        </View>
       )}
-      <UpdateModal
-        visible={modalVisible}
-        type={updateType}
-        data={updateData}
-        onDismiss={dismiss}
-        onSkipVersion={skipVersion}
-      />
     </View>
   );
 };
@@ -483,17 +557,21 @@ const styles = StyleSheet.create({
   webview: {
     flex: 1,
   },
-  loadingOverlay: {
+  loaderOverlay: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    zIndex: 10,
   },
-  loadingLogo: {
-    width: 120,
-    height: 120,
+  loaderOverlayAfterFirstLoad: {
+    backgroundColor: 'rgba(255, 255, 255, 0.45)',
   },
-  loadingSpinner: {
-    marginTop: 24,
+  loaderText: {
+    marginTop: 14,
+    color: '#4b5b67',
+    fontSize: 15,
+    fontWeight: '500',
   },
 });
 

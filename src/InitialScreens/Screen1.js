@@ -29,7 +29,11 @@ function Screen1({ navigation }) {
           <Pressable onPress={() => navigation.replace("screen4")}>
             <Text style={InitialScreensStyles.skipButton}>Skip</Text>
           </Pressable>
+          <Pressable onPress={() => navigation.replace("screen4")}>
+            <Text style={InitialScreensStyles.skipButton}>Skip</Text>
+          </Pressable>
 
+          <GradientNextButton title='Next' onPress={() => navigation.replace("screen2")} />
           <GradientNextButton title='Next' onPress={() => navigation.replace("screen2")} />
 
         </View>

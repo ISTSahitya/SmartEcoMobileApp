@@ -22,14 +22,18 @@ function Screen3({ navigation }) {
                     <Text style={InitialScreensStyles.pageDescription}>Track energy usage, environmental conditions, and device performance—all in one dashboard.</Text>
                 </View>
 
+            <View style={InitialScreensStyles.carouselSection}>
                 <Carousel currentScreen={2} />
+            </View>
 
+            <View style={InitialScreensStyles.footer}>
                 <View style={InitialScreensStyles.buttonContainer}>
                     <Pressable onPress={() => navigation.replace("screen4")}>
                         <Text style={InitialScreensStyles.skipButton}>Skip</Text>
                     </Pressable>
 
-                    <GradientNextButton title='Next' onPress={() => navigation.replace("screen4")} />
+                        <GradientNextButton title='Next' onPress={() => navigation.replace("screen4")} />
+                </View>
                 </View>
             </SafeAreaView>
         </LinearGradient>

@@ -22,8 +22,11 @@ function Screen2({ navigation }) {
                     <Text style={InitialScreensStyles.pageDescription}>Add and manage Smart Echo devices easily with quick, simple pairing.</Text>
                 </View>
 
+            <View style={InitialScreensStyles.carouselSection}>
                 <Carousel currentScreen={1} />
+            </View>
 
+            <View style={InitialScreensStyles.footer}>
                 <View style={InitialScreensStyles.buttonContainer}>
                     <Pressable onPress={() => navigation.replace("screen4")}>
                         <Text style={InitialScreensStyles.skipButton}>Skip</Text>
@@ -31,6 +34,7 @@ function Screen2({ navigation }) {
 
                     <GradientNextButton title='Next' onPress={() => navigation.replace("screen3")} />
                 </View>
+            </View>
             </SafeAreaView>
         </LinearGradient>
     );

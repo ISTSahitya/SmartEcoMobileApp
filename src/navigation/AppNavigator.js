@@ -12,7 +12,7 @@ const Stack = createNativeStackNavigator();
 export default function AppNavigator() {
 
   const linking = {
-    prefixes: ["smarteco://"],
+    prefixes: ["smarteco://", "smart://", "Smart://"],
     config: {
       screens: {
         WebView: "oauth-success", // deep link target

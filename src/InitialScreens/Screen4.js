@@ -29,11 +29,15 @@ function Screen4({ navigation }) {
                     <Text style={InitialScreensStyles.pageDescription}>Stay informed with automatic alerts when something needs your attention.</Text>
                 </View>
 
+            <View style={InitialScreensStyles.carouselSection}>
                 <Carousel currentScreen={3} />
+            </View>
 
-                <View style={[InitialScreensStyles.buttonContainer, {justifyContent: 'center'}]}>
-                    <GradientNextButton title='Get Started' onPress={handleStartClick} />
-                </View>
+                <View style={InitialScreensStyles.footer}>
+                <View style={[InitialScreensStyles.buttonContainer, { justifyContent: 'center' }]}>
+                        <GradientNextButton title='Get Started' onPress={handleStartClick} />
+                    </View>
+            </View>
             </SafeAreaView>
         </LinearGradient>
     );

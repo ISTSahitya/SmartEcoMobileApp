@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { View, Image, StyleSheet, Dimensions } from 'react-native'
+import { View, Image, StyleSheet, Dimensions, Platform } from 'react-native'
 import FirstImage from '../assets/images/CarouselImage1.png';
 import SecondImage from '../assets/images/CarouselImage2.png';
 import ThirdImage from '../assets/images/CarouselImage3.png';
@@ -13,7 +13,19 @@ const carouselItems = [
     { id: 4, image: 'Fourth Image', imageSrc: FourthImage }
 ]
 
-const { width } = Dimensions.get('screen');
+const { width, height } = Dimensions.get('window');
+const isIphone = Platform.OS === 'ios' && width < 768;
+const isIosTablet = Platform.OS === 'ios' && width >= 768;
+const imageHeight = isIphone
+    ? Math.min(300, Math.max(220, height * 0.34))
+    : isIosTablet
+        ? Math.min(520, Math.max(440, height * 0.36))
+        : 335;
+const carouselHeight = isIphone
+    ? Math.min(360, Math.max(270, height * 0.42))
+    : isIosTablet
+        ? imageHeight + 58
+        : 400;
 
 function Carousel({ currentScreen }) {
     const scrollX = useSharedValue(0);
@@ -117,7 +129,7 @@ const SlideItem = ({ item, index, scrollX }) => {
 
     return (
         <Animated.View key={index} style={[AnimatedStyle, styles.itemContainer]} >
-            <Image source={item.imageSrc} alt={item.image} style={{ height: 335 }} />
+            <Image source={item.imageSrc} alt={item.image} style={{ height: imageHeight }} resizeMode="contain" />
         </Animated.View>
     )
 }
@@ -135,10 +147,7 @@ const Pagination = ({ paginationIndex }) => {
 const styles = StyleSheet.create({
 
     mainContainer: {
-        flexShrink: 1,
-        width: '100%',
-        maxHeight: 400,
-        height: 400,
+        height: carouselHeight,
         gap: 10
     },
 
