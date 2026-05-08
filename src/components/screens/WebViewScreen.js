@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { PermissionsAndroid, BackHandler, Alert, Linking, Platform, StatusBar, View, NativeModules, AppState, ActivityIndicator, Image } from 'react-native';
+import { PermissionsAndroid, BackHandler, Alert, Linking, Platform, StatusBar, View, Text, NativeModules, AppState, ActivityIndicator } from 'react-native';
 import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
@@ -7,7 +7,7 @@ import WifiManager from 'react-native-wifi-reborn';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
 import useVersionCheck from '../../hooks/useVersionCheck';
 import UpdateModal from '../UpdateModal';
-import LinearGradient from 'react-native-linear-gradient';
+
 const { VpnModule } = NativeModules;
 
 const WebViewScreen = () => {
@@ -436,33 +436,39 @@ const WebViewScreen = () => {
         mixedContentMode="always"
         onMessage={onWebMessage}
         source={{ uri: 'https://app.smarteco.ai/smartecoiaq/' }}
-        style={styles.webview}
+        style={[styles.webview, { backgroundColor: '#fff' }]}
         contentInsetAdjustmentBehavior="automatic"
+        androidLayerType="hardware"
         cacheEnabled={true}
         cacheMode="LOAD_DEFAULT"
         domStorageEnabled={true}
         javaScriptEnabled={true}
-        startInLoadingState={false}
-        onLoadStart={() => setIsLoading(true)}
+        startInLoadingState={true}
+        renderLoading={() => (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="small" color="#0F796B" />
+            <Text style={styles.loadingText}>Loading SmartEco...</Text>
+          </View>
+        )}
         onLoadEnd={() => setIsLoading(false)}
+        onError={() => setIsLoading(false)}
+        onHttpError={() => setIsLoading(false)}
+        injectedJavaScriptBeforeContentLoaded={`
+          document.documentElement.style.backgroundColor = '#fff';
+          document.addEventListener('DOMContentLoaded', function() {
+            document.body.style.backgroundColor = '#fff';
+          });
+          true;
+        `}
         onNavigationStateChange={(navState) => {
           setCanGoBack(navState.canGoBack);
         }}
       />
       {isLoading && (
-        <LinearGradient
-          colors={['#0F796B', '#6FDC95']}
-          style={styles.loadingOverlay}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-        >
-          <Image
-            source={require('../../assets/images/logo_white.png')}
-            style={styles.loadingLogo}
-            resizeMode="contain"
-          />
-          <ActivityIndicator size="large" color="#fff" style={styles.loadingSpinner} />
-        </LinearGradient>
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="small" color="#0F796B" />
+          <Text style={styles.loadingText}>Loading SmartEco...</Text>
+        </View>
       )}
       <UpdateModal
         visible={modalVisible}
@@ -487,13 +493,13 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#fff',
   },
-  loadingLogo: {
-    width: 120,
-    height: 120,
-  },
-  loadingSpinner: {
-    marginTop: 24,
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#0F796B',
+    fontWeight: '500',
   },
 });
 
