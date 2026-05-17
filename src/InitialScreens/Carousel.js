@@ -14,18 +14,20 @@ const carouselItems = [
 ]
 
 const { width, height } = Dimensions.get('window');
-const isIphone = Platform.OS === 'ios' && width < 768;
-const isIosTablet = Platform.OS === 'ios' && width >= 768;
-const imageHeight = isIphone
-    ? Math.min(300, Math.max(220, height * 0.34))
+const shortestSide = Math.min(width, height);
+const isPhone = shortestSide < 600;
+const isIosTablet = Platform.OS === 'ios' && shortestSide >= 600;
+const imageWidth = isPhone
+    ? Math.min(width * 0.86, 360)
     : isIosTablet
-        ? Math.min(520, Math.max(440, height * 0.36))
-        : 335;
-const carouselHeight = isIphone
-    ? Math.min(360, Math.max(270, height * 0.42))
+        ? Math.min(width * 0.58, 560)
+        : Math.min(width * 0.82, 420);
+const imageHeight = isPhone
+    ? Math.min(height * 0.34, imageWidth * 1.25)
     : isIosTablet
-        ? imageHeight + 58
-        : 400;
+        ? Math.min(height * 0.46, imageWidth * 1.14)
+        : Math.min(360, imageWidth * 1.2);
+const carouselHeight = imageHeight + (isPhone ? 48 : 66);
 
 function Carousel({ currentScreen }) {
     const scrollX = useSharedValue(0);
@@ -52,7 +54,7 @@ function Carousel({ currentScreen }) {
         });
 
         setPaginationIndex(currentScreen)
-    }, [])
+    }, [currentScreen])
 
 
     /* ------------------ AUTOPLAY ------------------ */
@@ -129,7 +131,7 @@ const SlideItem = ({ item, index, scrollX }) => {
 
     return (
         <Animated.View key={index} style={[AnimatedStyle, styles.itemContainer]} >
-            <Image source={item.imageSrc} alt={item.image} style={{ height: imageHeight }} resizeMode="contain" />
+            <Image source={item.imageSrc} alt={item.image} style={styles.image} resizeMode="contain" />
         </Animated.View>
     )
 }
@@ -138,7 +140,13 @@ const Pagination = ({ paginationIndex }) => {
     return (
         <View style={styles.paginationContainer}>
             {carouselItems.map((_, index) => (
-                <View style={[styles.paginationDot, { backgroundColor: paginationIndex == index ? "#217C70" : "#C4DBD8" }]} key={index} ></View>
+                <View
+                    style={[
+                        styles.paginationDot,
+                        paginationIndex === index ? styles.activeDot : styles.inactiveDot,
+                    ]}
+                    key={index}
+                />
             ))}
         </View>
     )
@@ -147,28 +155,41 @@ const Pagination = ({ paginationIndex }) => {
 const styles = StyleSheet.create({
 
     mainContainer: {
+        width: '100%',
         height: carouselHeight,
-        gap: 10
+        gap: isPhone ? 10 : 18,
     },
 
     itemContainer: {
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 20,
         width: width,
+    },
+
+    image: {
+        width: imageWidth,
+        height: imageHeight,
     },
 
     paginationContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 4
+        gap: isPhone ? 4 : 8,
     },
 
     paginationDot: {
-        height: 14,
-        width: 14,
-        borderRadius: '100%',
+        height: isPhone ? 14 : 16,
+        width: isPhone ? 14 : 16,
+        borderRadius: 8,
+    },
+
+    activeDot: {
+        backgroundColor: '#217C70',
+    },
+
+    inactiveDot: {
+        backgroundColor: '#C4DBD8',
     }
 })
 

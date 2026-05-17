@@ -22,20 +22,17 @@ function Screen1({ navigation }) {
           <Text style={InitialScreensStyles.pageDescription}>Your all-in-one platform to monitor, control, and optimize your smart devices.</Text>
         </View>
 
-        <Carousel currentScreen={0} />
+        <View style={InitialScreensStyles.carouselSection}>
+          <Carousel currentScreen={0} />
+        </View>
 
-        <View style={InitialScreensStyles.buttonContainer}>
-
-          <Pressable onPress={() => navigation.replace("screen4")}>
-            <Text style={InitialScreensStyles.skipButton}>Skip</Text>
-          </Pressable>
-          <Pressable onPress={() => navigation.replace("screen4")}>
-            <Text style={InitialScreensStyles.skipButton}>Skip</Text>
-          </Pressable>
-
-          <GradientNextButton title='Next' onPress={() => navigation.replace("screen2")} />
-          <GradientNextButton title='Next' onPress={() => navigation.replace("screen2")} />
-
+        <View style={InitialScreensStyles.footer}>
+          <View style={InitialScreensStyles.buttonContainer}>
+            <Pressable onPress={() => navigation.replace("screen4")}>
+              <Text style={InitialScreensStyles.skipButton}>Skip</Text>
+            </Pressable>
+            <GradientNextButton title='Next' onPress={() => navigation.replace("screen2")} />
+          </View>
         </View>
       </SafeAreaView>
     </LinearGradient>

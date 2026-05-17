@@ -1,85 +1,85 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { PermissionsAndroid, BackHandler, Alert, Linking, Platform, StatusBar, View, NativeModules, ActivityIndicator, Text } from 'react-native';
+import { PermissionsAndroid, BackHandler, Alert, Linking, Platform, StatusBar, View } from 'react-native';
 import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 import WifiManager from 'react-native-wifi-reborn';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
-const { VpnModule, LocationPermissionModule } = NativeModules;
-const WEB_APP_URL = 'https://app.smarteco.ai/smartecoiaq/';
-const WEB_APP_SOURCE = { uri: WEB_APP_URL };
-const OAUTH_CALLBACK_SCHEMES = ['smarteco://', 'smart://'];
-let webViewCanGoBack = false;
+import NetInfo from "@react-native-community/netinfo";
+//import { check, request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 
-const isOAuthCallbackUrl = url => {
-  const normalizedUrl = url?.toLowerCase();
-  return OAUTH_CALLBACK_SCHEMES.some(scheme => normalizedUrl?.startsWith(scheme));
-};
+
 
 const WebViewScreen = () => {
   const insets = useSafeAreaInsets();
-  const [canGoBack] = useState(false);
-  const [webSourceUri, setWebSourceUri] = useState(WEB_APP_URL);
-  const [isWebViewLoading, setIsWebViewLoading] = useState(true);
-  const [hasLoadedPage, setHasLoadedPage] = useState(false);
-  const pendingOAuthMessageRef = useRef(null);
-  const hasRequestedIosLocationRef = useRef(false);
-  const hasShownIosLocationAlertRef = useRef(false);
+  const [history, setHistory] = useState([]);
+  const [currentUrl, setCurrentUrl] = useState(null);
 
   /* deeplink setup for oauth login */
   useEffect(() => {
-    Linking.getInitialURL().then(url => {
-      if (isOAuthCallbackUrl(url)) {
-        handleOAuthCallback(url);
-      }
-    });
+    const handleDeepLink = ({ url }) => {
+    try {
+      console.log("Deep link received:", url);
 
-    const urlSubscription = Linking.addEventListener('url', ({ url }) => {
-      if (isOAuthCallbackUrl(url)) {
-        handleOAuthCallback(url);
+      const parsedUrl = new URL(url);
+      const token = parsedUrl.searchParams.get("token");
+      const error = parsedUrl.searchParams.get("error");
+      const state = parsedUrl.searchParams.get("state");
+      const code = parsedUrl.searchParams.get("code");
+
+      if (error) {
+        sendToWeb({ type: "OAUTH_ERROR", error });
+        return;
       }
-    });
+
+      if (token || code) {
+        sendToWeb({
+          type: "OAUTH_SUCCESS",
+          access_token: token || undefined,
+          code: code || undefined,
+          state: state || undefined,
+        });
+      }
+    }
+     catch (e) {
+      console.log("Deep link parse error:", e);
+      sendToWeb({ type: "OAUTH_ERROR", error : 'Internal server error' });
+    }
+  }
+    const urlSubscription = Linking.addEventListener('url', handleDeepLink);
 
     return () => {
       urlSubscription.remove();
     };
 }, []);
 
-  // 
   useEffect(() => {
     const backHandler = BackHandler.addEventListener(
       'hardwareBackPress',
       () => {
-        if (webViewCanGoBack || canGoBack) {
-          webviewRef.current?.goBack();
+        if (history.length > 1) {
+          const prevUrl = history[history.length - 2];
+          // first goBack()
+          webviewRef.current.goBack();
+
+          // 🔥 check after slight delay if URL is same
+          setTimeout(() => {
+            if (currentUrl === prevUrl) {
+              // If same URL → still same page → goBack() again
+              webviewRef.current.goBack();
+            }
+          }, 200);
+
           return true;
         }
         return false; // allow app exit
-      }
+      },
     );
 
-  return () => backHandler.remove();
-}, []);
-
+    return () => backHandler.remove();
+  }, [history, currentUrl]);
   const webviewRef = useRef(null);
-  const checkAndAskLocation = async ({ showAlert = true } = {}) => {
-    if (Platform.OS === 'ios') {
-      hasRequestedIosLocationRef.current = true;
-      const granted = await LocationPermissionModule?.request?.();
-      if (!granted && showAlert && !hasShownIosLocationAlertRef.current) {
-        hasShownIosLocationAlertRef.current = true;
-        Alert.alert(
-          'Permission Required',
-          'Please allow Location Permission to detect your current Wi-Fi network.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => Linking.openURL('app-settings:') },
-          ],
-        );
-      }
-      return !!granted;
-    }
-
+  const checkAndAskLocation = async () => {
     // 1. Request location permission
     const permission = await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
@@ -175,11 +175,6 @@ const WebViewScreen = () => {
       const message = JSON.parse(event.nativeEvent.data);
 
       switch (message.action) {
-        case 'APP_VERSION_INFO':
-          lastVersionData.current = message.data;
-          handleVersionData(message.data);
-          break;
-
         case 'SCAN_WIFI':
           requestWifiScan();
           break;
@@ -187,7 +182,7 @@ const WebViewScreen = () => {
         case 'GET_SYSTEM_STATUS':
           const interval = setInterval(async () => {
             const systemStatus = await getSystemStatus();
-            if (systemStatus.success && systemStatus.locationPermission && !systemStatus.mobileData && !systemStatus.isVpnOn) {
+            if (systemStatus.success && systemStatus.locationPermission && !systemStatus.mobileData) {
               clearInterval(interval);
             }
           }, 3000);
@@ -226,23 +221,8 @@ const WebViewScreen = () => {
               { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Open Settings',
-                onPress: () => Linking.openURL('app-settings:'),
-              },
-            ]);
-          }
-
-          break;
-
-        case 'OPEN_WIFI_SETTINGS_FOR_NO_INTERNET':
-          if (Platform.OS === 'android') {
-            Linking.sendIntent('android.settings.WIFI_SETTINGS');
-
-          } else {
-            Alert.alert('Enable Wi-Fi', 'Please enable Wi-Fi from Settings', [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Open Settings',
-                onPress: () => Linking.openURL('app-settings:'),
+                onPress: () =>
+                  Linking.sendIntent('android.settings.WIFI_SETTINGS'),
               },
             ]);
           }
@@ -291,65 +271,8 @@ const WebViewScreen = () => {
     }
   };
 
-  const handleOAuthCallback = url => {
-    try {
-      console.log("OAuth callback received:", url);
-
-      const parsedUrl = new URL(url);
-      const token = parsedUrl.searchParams.get("token");
-      const error = parsedUrl.searchParams.get("error");
-      const state = parsedUrl.searchParams.get("state");
-      const code = parsedUrl.searchParams.get("code");
-      const webCallbackUrl = buildWebOAuthCallbackUrl(url);
-
-      if (error) {
-        setWebSourceUri(webCallbackUrl);
-        sendToWeb({ type: "OAUTH_ERROR", action: "OAUTH_ERROR", error }, true);
-        return;
-      }
-
-      if (token || code) {
-        setWebSourceUri(webCallbackUrl);
-        sendToWeb({
-          type: "OAUTH_SUCCESS",
-          action: "OAUTH_SUCCESS",
-          access_token: token || undefined,
-          token: token || undefined,
-          code: code || undefined,
-          state: state || undefined,
-        }, true);
-      }
-    } catch (e) {
-      console.log("OAuth callback parse error:", e);
-      sendToWeb({ type: "OAUTH_ERROR", action: "OAUTH_ERROR", error: 'Internal server error' }, true);
-    }
-  };
-
-  const buildWebOAuthCallbackUrl = callbackUrl => {
-    const queryIndex = callbackUrl.indexOf('?');
-    const hashIndex = callbackUrl.indexOf('#');
-    const query = queryIndex >= 0 ? callbackUrl.slice(queryIndex, hashIndex >= 0 ? hashIndex : undefined) : '';
-    const hash = hashIndex >= 0 ? callbackUrl.slice(hashIndex) : '';
-
-    return `${WEB_APP_URL}oauth-success${query}${hash}`;
-  };
-
-  const sendToWeb = (data, retryOnLoad = false) => {
-    const payload = JSON.stringify(data);
-    if (retryOnLoad) {
-      pendingOAuthMessageRef.current = payload;
-    }
-    webviewRef.current?.postMessage(payload);
-  };
-
-  const handleWebViewLoadEnd = () => {
-    setIsWebViewLoading(false);
-    setHasLoadedPage(true);
-
-    if (pendingOAuthMessageRef.current) {
-      webviewRef.current?.postMessage(pendingOAuthMessageRef.current);
-      pendingOAuthMessageRef.current = null;
-    }
+  const sendToWeb = data => {
+    webviewRef.current?.postMessage(JSON.stringify(data));
   };
 
   const getCurrentWifiInfo = async () => {
@@ -373,78 +296,56 @@ const WebViewScreen = () => {
 
   const getMobileDataStatus = async () => {
     try {
-      if (!NativeModules.MobileDataModule?.isMobileDataEnabled) {
-        return {
-          isMobileDataEnabled: false,
-        };
-      }
-
-      const isMobileDataEnabled = await NativeModules.MobileDataModule.isMobileDataEnabled();
+      const state = await NetInfo.fetch();
       return {
-        isMobileDataEnabled,
+        isMobileDataEnabled: state.type === 'cellular' && state.isConnected,
+        connectionType: state.type,
+        isConnected: state.isConnected,
       };
     } catch (e) {
-      console.log("Error while getting mobile data status", e?.message ?? e);
       return {
-        isMobileDataEnabled: false,
+        isMobileDataEnabled: true,
         error: e.toString(),
       };
     }
   };
 
   const checkLocationPermission = async () => {
-    try {
-      if (Platform.OS === 'ios') {
-        return !!(await LocationPermissionModule?.check?.());
-      }
-
+  try {
+    if (Platform.OS === 'android') {
       const granted = await PermissionsAndroid.check(
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
       );
       return granted;
-    } catch (err) {
-      return false;
-    }
-  };
-
-  const checkVpn = async () => {
-    if (!VpnModule?.isVpnActive) {
-      return false;
     }
 
-    const isVpnActive = await VpnModule.isVpnActive();
-    return isVpnActive;
-  };
+    // iOS fallback (no RNPermissions)
+    if (Platform.OS === 'ios') {
+      return true;
+    }
+
+    return false;
+  } catch (err) {
+    return false;
+  }
+};
 
   const getSystemStatus = async () => {
     try {
-      let locationPermission;
-
-      if (Platform.OS === 'ios') {
-        locationPermission = hasRequestedIosLocationRef.current
-          ? await checkLocationPermission()
-          : await checkAndAskLocation({ showAlert: false });
-      } else {
-        locationPermission = await checkLocationPermission();
-      }
-
+      const locationPermission = await checkLocationPermission();
       const mobileDataStatus = await getMobileDataStatus();
-      const isVpnOn = await checkVpn();
-
 
       sendToWeb({
         action: 'SYSTEM_STATUS',
         data: {
           locationPermission,
           mobileData: mobileDataStatus.isMobileDataEnabled,
-          isVpnOn
         },
       });
       return {
         success: true,
         locationPermission,
-        mobileData: mobileDataStatus.isMobileDataEnabled,
-        isVpnOn
+        mobileData: mobileDataStatus.isMobileDataEnabled
       }
     } catch (e) {
       sendToWeb({
@@ -508,43 +409,31 @@ const WebViewScreen = () => {
       />
       <WebView
         ref={webviewRef}
-        originWhitelist={['http://*', 'https://*', 'smarteco://*', 'smart://*']}
         mixedContentMode="always"
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
-        allowsInlineMediaPlayback={true}
-        mediaCapturePermissionGrantType="grantIfSameHostElsePrompt"
-        sharedCookiesEnabled={true}
-        thirdPartyCookiesEnabled={true}
-        setSupportMultipleWindows={false}
         onMessage={onWebMessage}
-        source={webSourceUri === WEB_APP_URL ? WEB_APP_SOURCE : { uri: webSourceUri }}
+        source={{ uri: 'https://app.smarteco.ai/smartecoiaq' }}
         style={styles.webview}
         contentInsetAdjustmentBehavior="automatic"
-        onLoadStart={() => setIsWebViewLoading(true)}
-        onLoadEnd={handleWebViewLoadEnd}
-        onShouldStartLoadWithRequest={request => {
-          console.log('[WebView request]', request.url);
-
-          if (isOAuthCallbackUrl(request.url)) {
-            handleOAuthCallback(request.url);
-            return false;
-          }
-
-          return true;
-        }}
-        onNavigationStateChange={(navState) => {
-          console.log('[WebView nav]', navState.url);
-          webViewCanGoBack = navState.canGoBack;
+        onNavigationStateChange={navState => {
+          const url = navState.url;
+          setCurrentUrl(url);
+          setHistory(prev => {
+            if (prev[prev.length - 1] !== url) {
+              return [...prev, url];
+            }
+            return prev;
+          });
         }}
        
+        // onError={(e) => {
+        //   console.log("WEBVIEW ERROR", e.nativeEvent);
+        // }}
+        // onHttpError={(e) => {
+        //   console.log("HTTP ERROR", e.nativeEvent);
+        // }}
+        
       />
-      {isWebViewLoading && (
-        <View style={[styles.loaderOverlay, hasLoadedPage && styles.loaderOverlayAfterFirstLoad]}>
-          <ActivityIndicator size="large" color="#15947f" />
-          {!hasLoadedPage && <Text style={styles.loaderText}>Loading SmartEco...</Text>}
-        </View>
-      )}
+      
     </View>
   );
 };
@@ -556,22 +445,6 @@ const styles = StyleSheet.create({
   },
   webview: {
     flex: 1,
-  },
-  loaderOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    zIndex: 10,
-  },
-  loaderOverlayAfterFirstLoad: {
-    backgroundColor: 'rgba(255, 255, 255, 0.45)',
-  },
-  loaderText: {
-    marginTop: 14,
-    color: '#4b5b67',
-    fontSize: 15,
-    fontWeight: '500',
   },
 });
 
