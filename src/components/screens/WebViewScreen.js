@@ -196,18 +196,18 @@ const WebViewScreen = () => {
           }, 3000);
           break;
 
-        // case 'CONNECT_WIFI':
-        //   if (message.ssid) {
-        //     const { ssid, password } = message;
-        //     connectToWifi(ssid, password);
-        //   } else {
-        //     sendToWeb({
-        //       action: 'WIFI_CONNECT_RESULT',
-        //       success: false,
-        //       error: 'SSID and password required',
-        //     });
-        //   }
-        //   break;
+        case 'CONNECT_WIFI':
+          if (message.ssid) {
+            const { ssid, password } = message;
+            connectToWifi(ssid, password);
+          } else {
+            sendToWeb({
+              action: 'WIFI_CONNECT_RESULT',
+              success: false,
+              error: 'SSID is required',
+            });
+          }
+          break;
 
         case 'OPEN_APP_SETTINGS':
           if (Platform.OS === 'ios') {
@@ -382,47 +382,45 @@ const WebViewScreen = () => {
     }
   };
 
-  // const connectToWifi = async (ssid, password) => {
-  //   try {
-  //     const locationReady = await checkAndAskLocation();
-  //     if (!locationReady) {
-  //       sendToWeb({
-  //         action: 'WIFI_CONNECT_RESULT',
-  //         success: false,
-  //         error: 'Location permission required',
-  //       });
-  //       return;
-  //     }
+  const connectToWifi = async (ssid, password) => {
+    try {
+      const locationReady = await checkAndAskLocation();
+      if (!locationReady) {
+        sendToWeb({
+          action: 'WIFI_CONNECT_RESULT',
+          success: false,
+          error: 'Location permission required',
+        });
+        return;
+      }
 
-  //     // Connect to WiFi
-  //     await WifiManager.connectToProtectedSSID(ssid, password, false, false);
+      await WifiManager.connectToProtectedSSID(ssid, password || '', false, false);
 
-  //     // Wait a bit and verify connection
-  //     setTimeout(async () => {
-  //       const connectedSSID = await WifiManager.getCurrentWifiSSID();
-  //       const success = connectedSSID === ssid;
+      // Wait a bit and verify connection
+      setTimeout(async () => {
+        const connectedSSID = await WifiManager.getCurrentWifiSSID();
+        const success = connectedSSID === ssid;
 
-  //       sendToWeb({
-  //         action: 'WIFI_CONNECT_RESULT',
-  //         success,
-  //         currentWifi: {
-  //           ssid: connectedSSID,
-  //           password: password,
-  //           note: "Wifi details"
-  //         },
-  //         message: success
-  //           ? `Connected to ${ssid}`
-  //           : 'Connection failed or timed out',
-  //       });
-  //     }, 3000);
-  //   } catch (e) {
-  //     sendToWeb({
-  //       action: 'WIFI_CONNECT_RESULT',
-  //       success: false,
-  //       error: e.toString(),
-  //     });
-  //   }
-  // };
+        sendToWeb({
+          action: 'WIFI_CONNECT_RESULT',
+          success,
+          currentWifi: {
+            ssid: connectedSSID,
+            note: 'Wifi details',
+          },
+          message: success
+            ? `Connected to ${ssid}`
+            : 'Connection failed or timed out',
+        });
+      }, 3000);
+    } catch (e) {
+      sendToWeb({
+        action: 'WIFI_CONNECT_RESULT',
+        success: false,
+        error: e.toString(),
+      });
+    }
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
