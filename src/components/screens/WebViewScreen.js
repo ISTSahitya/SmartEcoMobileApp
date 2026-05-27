@@ -266,6 +266,10 @@ const WebViewScreen = () => {
 
           break;
 
+        case 'CHECK_LOCATION':
+          checkAndAskLocation();
+          break;
+
         default:
           console.log('Unknown action:', message.action);
       }
@@ -433,7 +437,7 @@ const WebViewScreen = () => {
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
-        source={{ uri: 'https://app.smarteco.ai/smartecoiaq/' }}
+        source={{ uri: 'https://app.smarteco.ai/smartecodev/' }}
         style={[styles.webview, { backgroundColor: '#fff' }]}
         contentInsetAdjustmentBehavior="automatic"
         androidLayerType="hardware"
