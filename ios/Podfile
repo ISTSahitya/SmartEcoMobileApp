@@ -24,6 +24,42 @@ target 'Smart' do
   )
 
   post_install do |installer|
+    # Fix fmt 11.x consteval compatibility with Xcode 26 / Apple Clang 17+.
+    #
+    # base.h unconditionally sets FMT_USE_CONSTEVAL=1 for modern Clang, but
+    # Apple Clang 17 enforces consteval stricter, causing "not a constant
+    # expression" errors in format.cc. We:
+    #   1) Wrap the detection block with #ifndef so a -D flag can override it.
+    #   2) Pass -DFMT_USE_CONSTEVAL=0 to the fmt target so the guard skips the
+    #      detection and consteval is not used.
+    fmt_base = "#{installer.sandbox.root}/fmt/include/fmt/base.h"
+    if File.exist?(fmt_base)
+      content = File.read(fmt_base)
+      old_block_start = "// Detect consteval, C++20 constexpr extensions and std::is_constant_evaluated.\n#if !defined(__cpp_lib_is_constant_evaluated)"
+      new_block_start = "// Detect consteval, C++20 constexpr extensions and std::is_constant_evaluated.\n#ifndef FMT_USE_CONSTEVAL\n#if !defined(__cpp_lib_is_constant_evaluated)"
+      old_block_end   = "#  define FMT_USE_CONSTEVAL 0\n#endif\n#if FMT_USE_CONSTEVAL"
+      new_block_end   = "#  define FMT_USE_CONSTEVAL 0\n#endif\n#endif  // ifndef FMT_USE_CONSTEVAL\n#if FMT_USE_CONSTEVAL"
+      if content.include?(old_block_start) && !content.include?("#ifndef FMT_USE_CONSTEVAL")
+        content = content.sub(old_block_start, new_block_start)
+        content = content.sub(old_block_end, new_block_end)
+        FileUtils.chmod(0644, fmt_base)
+        File.write(fmt_base, content)
+        UI.puts "  [fmt patch] Added #ifndef FMT_USE_CONSTEVAL guard in base.h"
+      end
+    end
+
+    # Pass FMT_USE_CONSTEVAL=0 so the guard above disables consteval for fmt
+    installer.pods_project.targets.each do |target|
+      if target.name == 'fmt'
+        target.build_configurations.each do |config|
+          flags = config.build_settings['OTHER_CPLUSPLUSFLAGS'] || ['$(inherited)']
+          flags = [flags] unless flags.is_a?(Array)
+          flags << '-DFMT_USE_CONSTEVAL=0' unless flags.include?('-DFMT_USE_CONSTEVAL=0')
+          config.build_settings['OTHER_CPLUSPLUSFLAGS'] = flags
+        end
+      end
+    end
+
     react_native_post_install(
       installer,
       config[:reactNativePath],
