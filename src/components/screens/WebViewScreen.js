@@ -266,6 +266,10 @@ const WebViewScreen = () => {
 
           break;
 
+        case 'RELEASE_WIFI_BINDING':
+          releaseNetworkBinding();
+          break;
+
         case 'CHECK_LOCATION':
           checkAndAskLocation();
           break;
@@ -386,6 +390,26 @@ const WebViewScreen = () => {
     }
   };
 
+  const forceWifiUsage = async (enable) => {
+    await WifiManager.forceWifiUsageWithOptions(enable, { noInternet: enable });
+  };
+
+  const releaseNetworkBinding = async () => {
+    try {
+      await forceWifiUsage(false);
+    } catch (e) {
+      console.log('forceWifiUsage release error', e);
+    }
+
+    try {
+      await WifiManager.disconnect();
+    } catch (e) {
+      console.log('disconnect error', e);
+    }
+
+    sendToWeb({ action: 'WIFI_BINDING_RELEASED', success: true });
+  };
+
   const connectToWifi = async (ssid, password) => {
     try {
       const locationReady = await checkAndAskLocation();
@@ -399,6 +423,13 @@ const WebViewScreen = () => {
       }
 
       await WifiManager.connectToProtectedSSID(ssid, password || '', false, false);
+
+      // Route app process traffic through the IoT AP (it has no internet)
+      try {
+        await forceWifiUsage(true);
+      } catch (e) {
+        console.log('forceWifiUsage enable error', e);
+      }
 
       // Wait a bit and verify connection
       setTimeout(async () => {
@@ -418,6 +449,13 @@ const WebViewScreen = () => {
         });
       }, 3000);
     } catch (e) {
+      // Release any partial binding so the app isn't left stranded
+      try {
+        await forceWifiUsage(false);
+      } catch (releaseErr) {
+        console.log('forceWifiUsage release error on connect failure', releaseErr);
+      }
+
       sendToWeb({
         action: 'WIFI_CONNECT_RESULT',
         success: false,
