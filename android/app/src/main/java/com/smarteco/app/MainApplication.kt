@@ -17,6 +17,7 @@ class MainApplication : Application(), ReactApplication {
           add(MobileDataPackage()) // ← ADDED THIS LINE
           // Packages that cannot be autolinked yet can be added manually here, for example:
           add(VpnPackage())
+          add(DeviceConfigPackage())
         },
     )
   }
