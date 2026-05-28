@@ -19,6 +19,8 @@ const PermissionsAndroid = Platform.OS === 'android'
 
 const { VpnModule } = NativeModules;
 
+const IS_EMULATOR = true;
+
 const WebViewScreen = () => {
   const insets = useSafeAreaInsets();
   const [canGoBack, setCanGoBack] = useState(false);
@@ -246,6 +248,7 @@ const WebViewScreen = () => {
   };
 
   const checkVpn = async () => {
+    if (IS_EMULATOR) return false;
     try {
       return await VpnModule.isVpnActive();
     } catch (e) {
