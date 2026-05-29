@@ -167,6 +167,7 @@ const WebViewScreen = () => {
           currentWifi: { ssid: connectedSSID.ssid },
         });
       } else {
+        console.log('[SCAN_WIFI] Failed to get SSID:', connectedSSID.error);
         sendToWeb({
           action: 'WIFI_CONNECT_RESULT',
           currentWifi: { ssid: 'No wifi connected' },
@@ -175,6 +176,7 @@ const WebViewScreen = () => {
         });
       }
     } catch (e) {
+      console.log('[SCAN_WIFI] Exception:', e?.message, '\nStack:', e?.stack, '\nFull:', e);
       sendToWeb({
         action: 'WIFI_CONNECT_RESULT',
         success: false,
@@ -212,6 +214,7 @@ const WebViewScreen = () => {
         });
       }, 3000);
     } catch (e) {
+      console.log('[CONNECT_WIFI] Exception:', e?.message, '\nStack:', e?.stack, '\nFull:', e);
       sendToWeb({
         action: 'WIFI_CONNECT_RESULT',
         success: false,
@@ -285,6 +288,7 @@ const WebViewScreen = () => {
       const ssid = await WifiManager.getCurrentWifiSSID();
       return { ssid, password: null };
     } catch (e) {
+      console.log('[getCurrentWifiInfo] Exception:', e?.message, '\nStack:', e?.stack, '\nFull:', e);
       return { ssid: null, password: null, error: e.toString() };
     }
   };
@@ -305,12 +309,17 @@ const WebViewScreen = () => {
   // ─── Message bridge ──────────────────────────────────────────────────────────
 
   const sendToWeb = data => {
-    webviewRef.current?.postMessage(JSON.stringify(data));
+    const payload = JSON.stringify(data);
+    console.log('[WebView → Web] action:', data.action ?? data.type, '| payload:', payload);
+    webviewRef.current?.postMessage(payload);
   };
 
   const onWebMessage = event => {
+    const raw = event.nativeEvent.data;
+    console.log('[Web → WebView] raw:', raw);
     try {
-      const message = JSON.parse(event.nativeEvent.data);
+      const message = JSON.parse(raw);
+      console.log('[Web → WebView] action:', message.action ?? message.type, '| parsed:', JSON.stringify(message));
 
       switch (message.action) {
         case 'APP_VERSION_INFO':
@@ -363,10 +372,10 @@ const WebViewScreen = () => {
           break;
 
         default:
-          console.log('Unknown action:', message.action);
+          console.log('[Web → WebView] Unknown action:', message.action ?? message.type, '| full message:', JSON.stringify(message));
       }
     } catch (err) {
-      console.log('Bad message from web:', err);
+      console.log('[Web → WebView] Parse error:', err, '| raw data:', raw);
     }
   };
 
