@@ -709,7 +709,7 @@ const WebViewScreen = () => {
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
-        source={{ uri: 'https://default-libs-helped-updates.trycloudflare.com/smartecodev/' }}
+        source={{ uri: 'https://app.smarteco.ai/smartecodev' }}
         style={[styles.webview, { backgroundColor: '#fff' }]}
         contentInsetAdjustmentBehavior="automatic"
         androidLayerType="hardware"

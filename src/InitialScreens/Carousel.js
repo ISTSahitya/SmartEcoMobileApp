@@ -94,20 +94,18 @@ const SlideItem = ({ item, index, scrollX }) => {
 
     const AnimatedStyle = useAnimatedStyle(() => {
         return {
+            opacity: interpolate(
+                scrollX.value,
+                [(index - 1) * width, index * width, (index + 1) * width],
+                [0, 1, 0],
+                Extrapolation.CLAMP
+            ),
             transform: [
-                {
-                    translateX: interpolate(
-                        scrollX.value,
-                        [(index - 1) * width, index * width, (index + 1) * width],
-                        [(-width) * 0.4, 0, width * 0.4],
-                        Extrapolation.CLAMP
-                    )
-                },
                 {
                     scale: interpolate(
                         scrollX.value,
                         [(index - 1) * width, index * width, (index + 1) * width],
-                        [0.75, 1, 0.75],
+                        [0.8, 1, 0.8],
                         Extrapolation.CLAMP
                     )
                 }
@@ -139,7 +137,8 @@ const styles = StyleSheet.create({
         width: '100%',
         maxHeight: 400,
         height: 400,
-        gap: 10
+        gap: 10,
+        overflow: 'hidden'
     },
 
     itemContainer: {
