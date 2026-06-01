@@ -82,7 +82,7 @@ const WebViewScreen = () => {
         }
         return false;
       }
-    );
+    );  
     return () => backHandler.remove();
   }, [canGoBack]);
 
@@ -199,7 +199,7 @@ const WebViewScreen = () => {
 
       // On iOS this triggers a native system prompt via NEHotspotConfiguration.
       // On Android this connects silently using WifiManager.
-      await WifiManager.connectToProtectedSSID(ssid, password || '', false, false);
+      await WifiManager.connectToProtectedSSIDOnce(ssid, password || '', false, true);
 
       // Wait and verify the connection settled
       setTimeout(async () => {
