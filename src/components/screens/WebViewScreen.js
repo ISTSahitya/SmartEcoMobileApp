@@ -128,37 +128,33 @@ const WebViewScreen = () => {
   };
 
   //Requesting wifi scan for getting any wifi connected
-  const requestWifiScan = async () => {
+  const scanWifiNetworks = async () => {
     try {
       const locationReady = await checkAndAskLocation();
-      if (!locationReady) return;
-
-      // 3️⃣ Now scan WiFi
-      const connectedSSID = await getCurrentWifiInfo();
-      if (connectedSSID.ssid) {
+      if (!locationReady) {
         sendToWeb({
-          action: 'WIFI_CONNECT_RESULT',
-          success: true,
-          currentWifi: {
-            ssid: connectedSSID.ssid,
-          }
+          action: 'WIFI_SCAN_RESULT',
+          networks: [],
+          error: 'Location permission required',
         });
-      } else {
-        sendToWeb({
-          action: "WIFI_CONNECT_RESULT",
-          currentWifi: {
-            ssid: "No wifi connected"
-          },
-          success: false,
-          error: 'Connection failed. Please try again...'
-        })
+        return;
       }
+
+      const [networks, connectedSSID] = await Promise.all([
+        WifiManager.loadWifiList(),
+        getCurrentWifiInfo(),
+      ]);
+      sendToWeb({
+        action: 'WIFI_SCAN_RESULT',
+        networks,
+        currentWifi: { ssid: connectedSSID.ssid },
+      });
     } catch (e) {
       sendToWeb({
-          action: 'WIFI_CONNECT_RESULT',
-          success: false,
-          error: 'Connection timeout. Please try again...'
-        });
+        action: 'WIFI_SCAN_RESULT',
+        networks: [],
+        error: e.toString(),
+      });
     }
   };
 
@@ -176,6 +172,7 @@ const WebViewScreen = () => {
   const onWebMessage = event => {
     try {
       const message = JSON.parse(event.nativeEvent.data);
+      console.log('[WebView → Native] Received:', JSON.stringify(message));
 
       switch (message.action) {
         case 'APP_VERSION_INFO':
@@ -184,7 +181,7 @@ const WebViewScreen = () => {
           break;
 
         case 'SCAN_WIFI':
-          requestWifiScan();
+          scanWifiNetworks();
           break;
 
         case 'GET_SYSTEM_STATUS':
@@ -274,6 +271,10 @@ const WebViewScreen = () => {
           checkAndAskLocation();
           break;
 
+        case 'SCAN_WIFI_NETWORKS':
+          scanWifiNetworks();
+          break;
+
         default:
           console.log('Unknown action:', message.action);
       }
@@ -305,6 +306,7 @@ const WebViewScreen = () => {
   };
 
   const sendToWeb = data => {
+    console.log('[Native → WebView] Sending:', JSON.stringify(data));
     webviewRef.current?.postMessage(JSON.stringify(data));
   };
 
@@ -490,7 +492,15 @@ const WebViewScreen = () => {
             <Text style={styles.loadingText}>Loading SmartEco...</Text>
           </View>
         )}
-        onLoadEnd={() => setIsLoading(false)}
+        onLoadEnd={async () => {
+          setIsLoading(false);
+          const connectedSSID = await getCurrentWifiInfo();
+          sendToWeb({
+            action: 'WIFI_CONNECT_RESULT',
+            success: !!connectedSSID.ssid,
+            currentWifi: { ssid: connectedSSID.ssid },
+          });
+        }}
         onError={() => setIsLoading(false)}
         onHttpError={() => setIsLoading(false)}
         injectedJavaScriptBeforeContentLoaded={`
