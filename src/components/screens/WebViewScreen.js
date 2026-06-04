@@ -16,6 +16,9 @@ import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 import WifiManager from 'react-native-wifi-reborn';
+import ReactNativeBlobUtil from 'react-native-blob-util';
+import Share from 'react-native-share';
+import RNPrint from 'react-native-print';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
 import useVersionCheck from '../../hooks/useVersionCheck';
 import UpdateModal from '../UpdateModal';
@@ -319,6 +322,40 @@ const WebViewScreen = () => {
         case 'SEND_WIFI_CREDENTIALS':
           sendWifiCredentials(message.payload);
           break;
+
+        case 'DOWNLOAD_FILE': {
+          // Web sends either a flat message or one nested under `payload`.
+          const filePayload = message.payload || message;
+          handleDownloadFile({
+            fileName: filePayload.fileName,
+            mimeType: filePayload.mimeType,
+            data: filePayload.data,
+          });
+          break;
+        }
+
+        case 'PRINT_FILE': {
+          const printPayload = message.payload || message;
+          handlePrintFile({
+            fileName: printPayload.fileName,
+            mimeType: printPayload.mimeType,
+            data: printPayload.data,
+          });
+          break;
+        }
+
+        case 'SHARE': {
+          const sharePayload = message.payload || message;
+          handleShare({
+            url: sharePayload.url,
+            title: sharePayload.title,
+            text: sharePayload.text,
+            fileName: sharePayload.fileName,
+            mimeType: sharePayload.mimeType,
+            data: sharePayload.data,
+          });
+          break;
+        }
 
         default:
           console.log('Unknown action:', message.action);
@@ -648,6 +685,258 @@ const WebViewScreen = () => {
           );
         }
       }
+    }
+  };
+
+  // Strip a `data:<mime>;base64,` prefix if the web sent a full data URI,
+  // leaving only the raw base64 payload that blob-util expects.
+  const stripBase64Prefix = data => {
+    if (typeof data !== 'string') return '';
+    const marker = 'base64,';
+    const idx = data.indexOf(marker);
+    return idx !== -1 ? data.slice(idx + marker.length) : data;
+  };
+
+  // WRITE_EXTERNAL_STORAGE is only meaningful on Android <= 9 (API 28). On API 29+
+  // we publish through MediaStore, which needs no runtime permission.
+  const requestLegacyStoragePermission = async () => {
+    if (Platform.OS !== 'android' || Platform.Version > 28) return true;
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+        {
+          title: 'Storage Permission',
+          message: 'SmartEco needs storage access to save downloaded files.',
+          buttonPositive: 'OK',
+          buttonNegative: 'Cancel',
+        },
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (e) {
+      console.log('Storage permission error:', e);
+      return false;
+    }
+  };
+
+  // Handles DOWNLOAD_FILE messages: writes the base64 payload to disk and saves it
+  // to the public Downloads folder (Android) or the Save-to-Files sheet (iOS).
+  const handleDownloadFile = async ({ fileName, mimeType, data }) => {
+    const safeName = (fileName && String(fileName).trim()) || `download_${Date.now()}`;
+    const type = mimeType || 'application/octet-stream';
+    const base64 = stripBase64Prefix(data);
+
+    if (!base64) {
+      sendToWeb({
+        action: 'DOWNLOAD_FILE_RESULT',
+        success: false,
+        fileName: safeName,
+        error: 'No file data received.',
+      });
+      return;
+    }
+
+    try {
+      if (Platform.OS === 'android') {
+        const hasPermission = await requestLegacyStoragePermission();
+        if (!hasPermission) {
+          sendToWeb({
+            action: 'DOWNLOAD_FILE_RESULT',
+            success: false,
+            fileName: safeName,
+            error: 'Storage permission denied.',
+          });
+          Alert.alert(
+            'Permission Required',
+            'Storage permission is needed to save files. Open settings to grant it?',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            ],
+          );
+          return;
+        }
+
+        // Write to cache first, then publish into the public Downloads collection.
+        const tempPath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${safeName}`;
+        await ReactNativeBlobUtil.fs.writeFile(tempPath, base64, 'base64');
+
+        if (Platform.Version >= 29) {
+          // Scoped storage: MediaStore handles the public Downloads entry, no permission needed.
+          await ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
+            { name: safeName, parentFolder: '', mimeType: type },
+            'Download',
+            tempPath,
+          );
+        } else {
+          // Legacy: copy into the public Downloads dir and register with Download Manager.
+          const destPath = `${ReactNativeBlobUtil.fs.dirs.LegacyDownloadDir}/${safeName}`;
+          await ReactNativeBlobUtil.fs.cp(tempPath, destPath);
+          ReactNativeBlobUtil.android.addCompleteDownload({
+            title: safeName,
+            description: 'Download complete',
+            mime: type,
+            path: destPath,
+            showNotification: true,
+          });
+        }
+
+        ReactNativeBlobUtil.fs.unlink(tempPath).catch(() => {});
+
+        sendToWeb({
+          action: 'DOWNLOAD_FILE_RESULT',
+          success: true,
+          fileName: safeName,
+          message: `${safeName} saved to Downloads.`,
+        });
+      } else {
+        // iOS: write to the app's Documents dir, then open the Save-to-Files / share sheet.
+        const path = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/${safeName}`;
+        await ReactNativeBlobUtil.fs.writeFile(path, base64, 'base64');
+
+        try {
+          await Share.open({
+            url: `file://${path}`,
+            type,
+            filename: safeName,
+            saveToFiles: true,
+          });
+          sendToWeb({
+            action: 'DOWNLOAD_FILE_RESULT',
+            success: true,
+            fileName: safeName,
+            message: `${safeName} saved.`,
+          });
+        } catch (shareErr) {
+          // react-native-share throws when the user dismisses the sheet — treat as a cancel.
+          const msg = (shareErr && shareErr.message ? shareErr.message : '').toLowerCase();
+          const cancelled = msg.includes('cancel') || msg.includes('dismiss') || msg.includes('user did not share');
+          sendToWeb({
+            action: 'DOWNLOAD_FILE_RESULT',
+            success: false,
+            fileName: safeName,
+            error: cancelled ? 'Save cancelled.' : (shareErr?.message || 'Failed to save file.'),
+          });
+        }
+      }
+    } catch (e) {
+      console.log('DOWNLOAD_FILE error:', e);
+      sendToWeb({
+        action: 'DOWNLOAD_FILE_RESULT',
+        success: false,
+        fileName: safeName,
+        error: e instanceof Error ? e.message : 'Failed to save file.',
+      });
+    }
+  };
+
+  // Handles PRINT_FILE messages: decodes the base64 payload and opens the native
+  // print dialog. Images are embedded in HTML so they scale to the page; other
+  // printable docs (e.g. PDF) are written to a temp file and printed directly.
+  const handlePrintFile = async ({ fileName, mimeType, data }) => {
+    const type = mimeType || 'application/octet-stream';
+    const base64 = stripBase64Prefix(data);
+
+    if (!base64) {
+      sendToWeb({
+        action: 'PRINT_FILE_RESULT',
+        success: false,
+        fileName,
+        error: 'No file data received.',
+      });
+      return;
+    }
+
+    let tempPath = null;
+    try {
+      if (type.startsWith('image/')) {
+        const html =
+          '<html><head><meta name="viewport" content="width=device-width, initial-scale=1">' +
+          '<style>@page{margin:0}html,body{height:100%;margin:0}' +
+          '.wrap{display:flex;align-items:center;justify-content:center;height:100%}' +
+          'img{max-width:100%;max-height:100%}</style></head>' +
+          `<body><div class="wrap"><img src="data:${type};base64,${base64}"/></div></body></html>`;
+        await RNPrint.print({ html });
+      } else {
+        const safeName = (fileName && String(fileName).trim()) || `print_${Date.now()}`;
+        tempPath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${safeName}`;
+        await ReactNativeBlobUtil.fs.writeFile(tempPath, base64, 'base64');
+        await RNPrint.print({ filePath: tempPath });
+      }
+
+      sendToWeb({ action: 'PRINT_FILE_RESULT', success: true, fileName });
+    } catch (e) {
+      console.log('PRINT_FILE error:', e);
+      const msg = (e && e.message ? e.message : '').toLowerCase();
+      const cancelled = msg.includes('cancel') || msg.includes('did not');
+      sendToWeb({
+        action: 'PRINT_FILE_RESULT',
+        success: false,
+        fileName,
+        error: cancelled
+          ? 'Print cancelled.'
+          : e instanceof Error
+          ? e.message
+          : 'Failed to print.',
+      });
+    } finally {
+      if (tempPath) ReactNativeBlobUtil.fs.unlink(tempPath).catch(() => {});
+    }
+  };
+
+  // Handles SHARE messages: opens the native share sheet. When `data` is present
+  // the base64 payload (e.g. the QR image) is written to a temp file and shared
+  // alongside any text/url; otherwise just the url/text is shared.
+  const handleShare = async ({ url, title, text, fileName, mimeType, data }) => {
+    const base64 = stripBase64Prefix(data);
+    let tempPath = null;
+
+    try {
+      const options = {};
+      if (title) options.title = title;
+
+      const message = [text, url].filter(Boolean).join('\n');
+      if (message) options.message = message;
+
+      if (base64) {
+        const type = mimeType || 'application/octet-stream';
+        const safeName = (fileName && String(fileName).trim()) || `share_${Date.now()}`;
+        tempPath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${safeName}`;
+        await ReactNativeBlobUtil.fs.writeFile(tempPath, base64, 'base64');
+        options.url = `file://${tempPath}`;
+        options.type = type;
+        options.filename = safeName;
+      } else if (url) {
+        options.url = url;
+      }
+
+      if (!options.url && !options.message) {
+        sendToWeb({
+          action: 'SHARE_RESULT',
+          success: false,
+          error: 'Nothing to share.',
+        });
+        return;
+      }
+
+      await Share.open(options);
+      sendToWeb({ action: 'SHARE_RESULT', success: true });
+    } catch (e) {
+      const msg = (e && e.message ? e.message : '').toLowerCase();
+      const cancelled =
+        msg.includes('cancel') ||
+        msg.includes('dismiss') ||
+        msg.includes('user did not share');
+      sendToWeb({
+        action: 'SHARE_RESULT',
+        success: false,
+        error: cancelled
+          ? 'Share cancelled.'
+          : e instanceof Error
+          ? e.message
+          : 'Failed to share.',
+      });
+    } finally {
+      if (tempPath) ReactNativeBlobUtil.fs.unlink(tempPath).catch(() => {});
     }
   };
 
