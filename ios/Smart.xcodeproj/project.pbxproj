@@ -14,6 +14,7 @@
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		9F4B3A3D2D060504006A70B1 /* LocationPermissionModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 9F4B3A3C2D060504006A70B1 /* LocationPermissionModule.m */; };
 		A8E62D302D0A0001006A70B1 /* DeviceConfigModule.m in Sources */ = {isa = PBXBuildFile; fileRef = A8E62D2F2D0A0001006A70B1 /* DeviceConfigModule.m */; };
+		16D06EB1848B4788A62E7C66 /* WifiConnectModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 13E2B497C2E14F369E7D1FDC /* WifiConnectModule.m */; };
 		E9182696134644A3A4EBC012 /* Colors.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0644FA44499D473B9488EB3B /* Colors.xcassets */; };
 		F36F2F00CE6E40D08CF3171B /* BootSplash.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 8C310B2B13A64D7A84AD3D26 /* BootSplash.storyboard */; };
 /* End PBXBuildFile section */
@@ -33,6 +34,7 @@
 		8C310B2B13A64D7A84AD3D26 /* BootSplash.storyboard */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = BootSplash.storyboard; path = Smart/BootSplash.storyboard; sourceTree = "<group>"; };
 		9F4B3A3C2D060504006A70B1 /* LocationPermissionModule.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = LocationPermissionModule.m; path = Smart/LocationPermissionModule.m; sourceTree = "<group>"; };
 		A8E62D2F2D0A0001006A70B1 /* DeviceConfigModule.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = DeviceConfigModule.m; path = Smart/DeviceConfigModule.m; sourceTree = "<group>"; };
+		13E2B497C2E14F369E7D1FDC /* WifiConnectModule.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = WifiConnectModule.m; path = Smart/WifiConnectModule.m; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -55,6 +57,7 @@
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				9F4B3A3C2D060504006A70B1 /* LocationPermissionModule.m */,
 				A8E62D2F2D0A0001006A70B1 /* DeviceConfigModule.m */,
+				13E2B497C2E14F369E7D1FDC /* WifiConnectModule.m */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				13B07FB91A68108700A75B9A /* Smart.entitlements */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
@@ -216,13 +219,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Smart/Pods-Smart-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Smart/Pods-Smart-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -276,13 +275,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Smart/Pods-Smart-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Smart/Pods-Smart-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -299,6 +294,7 @@
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
 				9F4B3A3D2D060504006A70B1 /* LocationPermissionModule.m in Sources */,
 				A8E62D302D0A0001006A70B1 /* DeviceConfigModule.m in Sources */,
+				16D06EB1848B4788A62E7C66 /* WifiConnectModule.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -32,14 +32,22 @@ target 'Smart' do
     )
 
     installer.pods_project.targets.each do |target|
-      next unless target.name == 'RNScreens'
+      # Existing RNScreens header search path fix
+      if target.name == 'RNScreens'
+        target.build_configurations.each do |build_config|
+          header_search_paths = build_config.build_settings['HEADER_SEARCH_PATHS'] || '$(inherited)'
+          paths = header_search_paths.is_a?(Array) ? header_search_paths : header_search_paths.split(' ')
+          generated_headers_path = '"$(PODS_ROOT)/../build/generated/ios"'
+          paths << generated_headers_path unless paths.include?(generated_headers_path)
+          build_config.build_settings['HEADER_SEARCH_PATHS'] = paths
+        end
+      end
 
-      target.build_configurations.each do |build_config|
-        header_search_paths = build_config.build_settings['HEADER_SEARCH_PATHS'] || '$(inherited)'
-        paths = header_search_paths.is_a?(Array) ? header_search_paths : header_search_paths.split(' ')
-        generated_headers_path = '"$(PODS_ROOT)/../build/generated/ios"'
-        paths << generated_headers_path unless paths.include?(generated_headers_path)
-        build_config.build_settings['HEADER_SEARCH_PATHS'] = paths
+      # Workaround for Xcode 26 + Apple Clang consteval strictness breaking the bundled fmt
+      if target.name == 'fmt'
+        target.build_configurations.each do |build_config|
+          build_config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+        end
       end
     end
   end

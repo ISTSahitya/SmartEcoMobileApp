@@ -10,9 +10,9 @@ import NetInfo from "@react-native-community/netinfo";
 
 const DEVICE_CONFIG_URL = 'http://192.168.4.1/wifi';
 const DEVICE_CONFIG_TIMEOUT_MS = 45000;
-//const WEB_APP_URL = 'https://atlas.smartgeoapps.com/smartecodev/';
-const WEB_APP_URL = 'https://app.smarteco.ai/smartecoiaq/';
-const { DeviceConfigModule } = NativeModules;
+const WEB_APP_URL = 'https://atlas.smartgeoapps.com/smartecodev/';
+// const WEB_APP_URL = 'https://app.smarteco.ai/smartecoiaq/';
+const { DeviceConfigModule, WifiConnectModule } = NativeModules;
 
 const logDeviceSetup = (step, details = {}) => {
   console.log('[DeviceSetup]', step, details);
@@ -248,7 +248,9 @@ const WebViewScreen = () => {
         message.action === 'SEND_WIFI_CREDENTIALS' ||
         message.action === 'SEND_WIFI_DETAILS_TO_DEVICE' ||
         message.action === 'SCAN_WIFI' ||
-        message.action === 'GET_SYSTEM_STATUS'
+        message.action === 'GET_SYSTEM_STATUS' ||
+        message.action === 'CONNECT_WIFI' ||
+        message.action === 'RELEASE_WIFI_BINDING'
       ) {
         logProvisionStep('web_message_received', {
           action: message.action,
@@ -272,18 +274,18 @@ const WebViewScreen = () => {
           }, 3000);
           break;
 
-        // case 'CONNECT_WIFI':
-        //   if (message.ssid) {
-        //     const { ssid, password } = message;
-        //     connectToWifi(ssid, password);
-        //   } else {
-        //     sendToWeb({
-        //       action: 'WIFI_CONNECT_RESULT',
-        //       success: false,
-        //       error: 'SSID and password required',
-        //     });
-        //   }
-        //   break;
+        case 'CONNECT_WIFI':
+          if (message.ssid) {
+            const { ssid, password } = message;
+            connectToWifi(ssid, password);
+          } else {
+            sendToWeb({
+              action: 'WIFI_CONNECT_RESULT',
+              success: false,
+              error: 'SSID and password required',
+            });
+          }
+          break;
 
         case 'OPEN_APP_SETTINGS':
           if (Platform.OS === 'ios') {
@@ -378,6 +380,26 @@ const WebViewScreen = () => {
         case 'WEB_NETWORK_LOG':
           logProvisionStep('web_network_log', message.data || {});
           break;
+
+        case 'RELEASE_WIFI_BINDING': {
+          const { ssid, password } = message;
+          logProvisionStep('release_wifi_binding_received', { platform: Platform.OS, ssid });
+          const releaseBinding = async () => {
+            if (Platform.OS === 'ios' && WifiConnectModule?.connectToNetwork && ssid && password) {
+              try {
+                logProvisionStep('ios_reconnecting_to_home_wifi', { ssid });
+                await WifiConnectModule.connectToNetwork(ssid, password);
+                logProvisionStep('ios_reconnected_to_home_wifi', { ssid });
+              } catch (e) {
+                // iOS will auto-reconnect via preferred networks after the joinOnce session ends
+                logProvisionStep('ios_reconnect_to_home_wifi_failed', { error: e?.toString?.() });
+              }
+            }
+            sendToWeb({ action: 'WIFI_BINDING_RELEASED' });
+          };
+          releaseBinding();
+          break;
+        }
 
         default:
           console.log('Unknown action:', message.action);
@@ -615,47 +637,79 @@ const WebViewScreen = () => {
     }
   };
 
-  // const connectToWifi = async (ssid, password) => {
-  //   try {
-  //     const locationReady = await checkAndAskLocation();
-  //     if (!locationReady) {
-  //       sendToWeb({
-  //         action: 'WIFI_CONNECT_RESULT',
-  //         success: false,
-  //         error: 'Location permission required',
-  //       });
-  //       return;
-  //     }
+  const connectToWifi = async (ssid, password) => {
+    try {
+      if (Platform.OS === 'ios') {
+        if (!WifiConnectModule?.connectToNetwork) {
+          sendToWeb({
+            action: 'WIFI_CONNECT_RESULT',
+            success: false,
+            error: 'WifiConnectModule not available',
+          });
+          return;
+        }
+        // NEHotspotConfiguration with joinOnce=YES: temporarily joins the network
+        // for this session only — not saved to device WiFi settings.
+        // iOS will show a system confirmation dialog to the user.
+        await WifiConnectModule.connectToNetwork(ssid, password);
 
-  //     // Connect to WiFi
-  //     await WifiManager.connectToProtectedSSID(ssid, password, false, false);
-
-  //     // Wait a bit and verify connection
-  //     setTimeout(async () => {
-  //       const connectedSSID = await WifiManager.getCurrentWifiSSID();
-  //       const success = connectedSSID === ssid;
-
-  //       sendToWeb({
-  //         action: 'WIFI_CONNECT_RESULT',
-  //         success,
-  //         currentWifi: {
-  //           ssid: connectedSSID,
-  //           password: password,
-  //           note: "Wifi details"
-  //         },
-  //         message: success
-  //           ? `Connected to ${ssid}`
-  //           : 'Connection failed or timed out',
-  //       });
-  //     }, 3000);
-  //   } catch (e) {
-  //     sendToWeb({
-  //       action: 'WIFI_CONNECT_RESULT',
-  //       success: false,
-  //       error: e.toString(),
-  //     });
-  //   }
-  // };
+        // iOS wifi switching can take longer than a single check allows.
+        // Poll the current SSID until it matches the target or we time out.
+        const MAX_CHECKS = 6;
+        const CHECK_INTERVAL_MS = 1500;
+        let checkCount = 0;
+        const pollForConnection = async () => {
+          checkCount++;
+          const connectedSSID = (await getCurrentWifiInfo()).ssid;
+          const success = normalizeSsid(connectedSSID).toLowerCase() === normalizeSsid(ssid).toLowerCase();
+          logProvisionStep('ios_wifi_connect_poll', {
+            checkCount,
+            connectedSSID,
+            targetSsid: ssid,
+            success,
+          });
+          if (success || checkCount >= MAX_CHECKS) {
+            sendToWeb({
+              action: 'WIFI_CONNECT_RESULT',
+              success,
+              currentWifi: { ssid: connectedSSID },
+              message: success ? `Connected to ${ssid}` : 'Connection failed or timed out',
+            });
+          } else {
+            setTimeout(pollForConnection, CHECK_INTERVAL_MS);
+          }
+        };
+        setTimeout(pollForConnection, 2000);
+      } else {
+        const locationReady = await checkAndAskLocation();
+        if (!locationReady) {
+          sendToWeb({
+            action: 'WIFI_CONNECT_RESULT',
+            success: false,
+            error: 'Location permission required',
+          });
+          return;
+        }
+        await WifiManager.connectToProtectedSSID(ssid, password, false, false);
+        setTimeout(async () => {
+          const connectedSSID = await WifiManager.getCurrentWifiSSID();
+          const success = connectedSSID === ssid;
+          sendToWeb({
+            action: 'WIFI_CONNECT_RESULT',
+            success,
+            currentWifi: { ssid: connectedSSID, password, note: 'Wifi details' },
+            message: success ? `Connected to ${ssid}` : 'Connection failed or timed out',
+          });
+        }, 3000);
+      }
+    } catch (e) {
+      sendToWeb({
+        action: 'WIFI_CONNECT_RESULT',
+        success: false,
+        error: e.toString(),
+      });
+    }
+  };
 
   // const sendWifiCredentials = async (payload) => {
   //   const MAX_ATTEMPTS = 3;
