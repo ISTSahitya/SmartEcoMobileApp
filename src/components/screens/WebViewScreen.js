@@ -241,6 +241,7 @@ const WebViewScreen = () => {
   // ─── System status (VPN / mobile data / location) ────────────────────────────
 
   const getMobileDataStatus = async () => {
+    if (IS_EMULATOR) return { isMobileDataEnabled: false };
     try {
       const isMobileDataEnabled = await NativeModules.MobileDataModule.isMobileDataEnabled();
       return { isMobileDataEnabled };
