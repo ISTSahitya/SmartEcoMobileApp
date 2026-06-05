@@ -1,11 +1,9 @@
-import React, { useState } from "react";
+import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
-import SplashLottieScreen from "../components/screens/SplashLottieScreen";
+import OnboardingWebViewScreen from "../components/screens/OnboardingWebViewScreen";
 import WebViewScreen from "../components/screens/WebViewScreen";
-import SplashController from "../components/Splash/SplashController";
-import InitialNavigator from '../navigation/InitialNavigator';
 
 const Stack = createNativeStackNavigator();
 
@@ -15,26 +13,22 @@ export default function AppNavigator() {
     prefixes: ["smarteco://"],
     config: {
       screens: {
-        WebView: "oauth-success", // deep link target
+        WebView: "oauth-success",
       },
     },
   };
 
   return (
     <NavigationContainer linking={linking}>
-      <Stack.Navigator 
+      <Stack.Navigator
         screenOptions={{ headerShown: false }}
-        initialRouteName="Splash"
+        initialRouteName="Onboarding"
       >
-        {/* FIRST SCREEN — Lottie Splash Animation */}
-        <Stack.Screen name="Splash" component={SplashController} />
+        {/* Lovable onboarding (splash + 3 screens) loaded via WebView */}
+        <Stack.Screen name="Onboarding" component={OnboardingWebViewScreen} />
 
-        {/* Onboarding flow (4 screens inside) */}
-        <Stack.Screen name="Onboarding" component={InitialNavigator} />
-
-        {/* AFTER SPLASH → WebView (Login Page) */}
+        {/* Main app WebView */}
         <Stack.Screen name="WebView" component={WebViewScreen} />
-
       </Stack.Navigator>
     </NavigationContainer>
   );

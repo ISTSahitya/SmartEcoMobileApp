@@ -1,46 +1,49 @@
-import React, { useState, useEffect } from "react";
-import { View } from "react-native";
+import React, { useEffect } from "react";
+import { View, StyleSheet, Image } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
-import StepWhite from "./StepWhite";
-import StepDropCircle from "./StepDropCircle";
-import StepExpandCircle from "./StepExpandCircle";
-import StepGradient from "./gradient";
-import StepText from "./StepText";
 import RNBootSplash from "react-native-bootsplash";
 
 export default function SplashController({ navigation }) {
-  const [step, setStep] = useState(1);
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const onboardingDone = await AsyncStorage.getItem("ONBOARDING_DONE");
+        RNBootSplash.hide({ fade: true });
 
- useEffect(() => {
-  let targetScreen = "WebView"; // default
+        if (onboardingDone === "true") {
+          navigation.replace("WebView");
+        } else {
+          navigation.replace("Onboarding");
+        }
+      } catch (e) {
+        RNBootSplash.hide({ fade: true });
+        navigation.replace("Onboarding");
+      }
+    };
 
-  const init = async () => {
-    const onboardingDone = await AsyncStorage.getItem("ONBOARDING_DONE");
-    targetScreen = onboardingDone === "true" ? "WebView" : "Onboarding";
-    RNBootSplash.hide({ fade: true });
-  };
-
-  init().finally(() => {
-    setTimeout(() => setStep(2), 300);
-    setTimeout(() => setStep(3), 2000);
-    setTimeout(() => setStep(4), 5000);
-    setTimeout(() => setStep(5), 5500);
-
-    setTimeout(() => {
-      navigation.replace(targetScreen); 
-    }, 10500);
-  });
-}, []);
-
+    init();
+  }, []);
 
   return (
-    <View style={{ flex: 1 }}>
-      {step === 1 && <StepWhite />}
-      {step === 2 && <StepDropCircle />}
-      {step === 3 && <StepExpandCircle />}
-      {step === 4 && <StepGradient />}
-      {step === 5 && <StepText />}
+    <View style={styles.container}>
+      <Image
+        source={require("../../assets/images/logo_1.png")}
+        style={styles.logo}
+        resizeMode="contain"
+      />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#fafffe",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  logo: {
+    width: 180,
+    height: 220,
+  },
+});

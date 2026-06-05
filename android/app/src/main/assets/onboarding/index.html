@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>SmartEco</title>
+<style>
+/* ── Reset & Base ─────────────────────────────────────────── */
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --primary:oklch(0.68 0.14 165);
+  --primary-fg:oklch(0.99 0 0);
+  --primary-glow:oklch(0.82 0.16 165);
+  --aqua:oklch(0.78 0.11 210);
+  --aqua-glow:oklch(0.9 0.08 210);
+  --bg:oklch(0.995 0.005 160);
+  --fg:oklch(0.22 0.04 175);
+  --muted-fg:oklch(0.52 0.03 180);
+  --border:oklch(0.92 0.015 170 / 0.6);
+  --secondary:oklch(0.96 0.02 170);
+  --muted:oklch(0.97 0.01 170);
+  --gradient-eco:linear-gradient(135deg,oklch(0.68 0.14 165),oklch(0.78 0.11 210));
+  --gradient-btn:linear-gradient(135deg,oklch(0.62 0.15 165),oklch(0.72 0.13 185));
+  --shadow-soft:0 20px 60px -20px oklch(0.68 0.14 165 / 0.35);
+  --glass-bg:oklch(1 0 0 / 0.55);
+  --glass-border:oklch(1 0 0 / 0.7);
+  --shadow-card:0 10px 40px -10px oklch(0.4 0.05 180 / 0.15);
+}
+html,body{
+  height:100%;width:100%;overflow:hidden;
+  background:var(--bg);color:var(--fg);
+  font-family:"Inter",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  -webkit-tap-highlight-color:transparent;
+}
+
+/* ── Screen container ──────────────────────────────────────── */
+.screen{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;
+  opacity:0;transform:translateX(40px);
+  transition:opacity 0.6s cubic-bezier(0.22,1,0.36,1),transform 0.6s cubic-bezier(0.22,1,0.36,1);
+  pointer-events:none;
+  background:#fff;
+}
+.screen.active{opacity:1;transform:translateX(0);pointer-events:auto}
+.screen.exit{opacity:0;transform:translateX(-40px);pointer-events:none}
+
+/* ── Splash ─────────────────────────────────────────────────── */
+#splash{
+  justify-content:center;align-items:center;overflow:hidden;
+  opacity:1;transform:none;pointer-events:auto;
+}
+#splash.exit{opacity:0;transform:scale(0.96)}
+#splash .glow{
+  position:absolute;width:420px;height:420px;border-radius:50%;
+  background:radial-gradient(circle,oklch(0.82 0.16 165 / 0.35),transparent 65%);
+  animation:glowPulse 4s ease-in-out infinite;
+}
+@keyframes glowPulse{
+  0%,100%{transform:scale(0.9);opacity:0.6}
+  50%{transform:scale(1.05);opacity:0.9}
+}
+#splash .logo-wrap{
+  position:relative;z-index:10;
+  animation:logoIn 1.2s cubic-bezier(0.22,1,0.36,1) forwards;
+}
+@keyframes logoIn{
+  from{transform:scale(0.6);opacity:0;filter:blur(8px)}
+  to{transform:scale(1);opacity:1;filter:blur(0)}
+}
+#splash .logo-wrap img{height:176px;width:auto}
+.shimmer{
+  position:absolute;inset:0;
+  background:linear-gradient(110deg,transparent 30%,oklch(1 0 0 / 0.6) 50%,transparent 70%);
+  background-size:200% 100%;
+  animation:shimmerSweep 2.2s ease-in-out infinite;
+  mix-blend-mode:overlay;
+}
+@keyframes shimmerSweep{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* ── Particles ──────────────────────────────────────────────── */
+.particles{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.particle{
+  position:absolute;border-radius:50%;
+  animation:particleFloat var(--dur) ease-in-out var(--delay) infinite;
+}
+@keyframes particleFloat{
+  0%,100%{transform:translateY(0);opacity:0}
+  30%{opacity:0.8}
+  50%{transform:translateY(-30px)}
+  100%{transform:translateY(0);opacity:0}
+}
+
+/* ── Onboarding shared ──────────────────────────────────────── */
+.ob-content{flex:1;display:flex;flex-direction:column;align-items:center;padding:0 28px}
+.ob-pt10{padding-top:40px}
+.ob-pt24{padding-top:96px}
+.image-area{position:relative;display:flex;align-items:center;justify-content:center;height:280px;width:100%;overflow:visible}
+.device-img{position:relative;z-index:10;height:160px;width:auto;animation:deviceFloat 5s ease-in-out infinite}
+@keyframes deviceFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+.screen-glow{
+  position:absolute;width:192px;height:192px;border-radius:50%;
+  animation:glowPulse 4s ease-in-out infinite;
+}
+h1{font-size:28px;font-weight:700;line-height:1.2;letter-spacing:-0.02em;text-align:center;margin-top:24px}
+.eco-text{background:var(--gradient-eco);-webkit-background-clip:text;background-clip:text;color:transparent}
+.body-text{margin-top:12px;max-width:360px;text-align:center;font-size:14px;font-weight:300;line-height:1.6;color:var(--muted-fg)}
+.chips{margin-top:24px;display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+.chip{
+  border-radius:9999px;border:1px solid var(--border);background:var(--muted);
+  padding:6px 14px;font-size:12px;font-weight:500;color:var(--fg);
+  opacity:0;animation:chipIn 0.6s cubic-bezier(0.22,1,0.36,1) forwards;
+}
+@keyframes chipIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Bottom area ─────────────────────────────────────────────── */
+.bottom{
+  position:relative;z-index:20;margin-top:auto;
+  display:flex;flex-direction:column;gap:20px;
+  padding:16px 28px 40px;
+}
+.dots{display:flex;align-items:center;justify-content:center;gap:8px}
+.dot{height:6px;border-radius:9999px;transition:all 0.4s cubic-bezier(0.22,1,0.36,1)}
+.dot.active{width:24px;background:var(--primary)}
+.dot.inactive{width:6px;background:oklch(0.85 0.02 170)}
+.cta-btn{
+  height:56px;width:100%;border:none;border-radius:9999px;cursor:pointer;
+  background:var(--gradient-btn);box-shadow:var(--shadow-soft);
+  color:var(--primary-fg);font-size:16px;font-weight:600;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  position:relative;overflow:hidden;
+  transition:transform 0.15s;
+}
+.cta-btn:active{transform:scale(0.97)}
+.cta-btn .shimmer{opacity:0.4}
+.cta-btn svg{width:16px;height:16px}
+
+/* ── Skip button ─────────────────────────────────────────────── */
+.skip-btn{
+  position:absolute;right:24px;top:48px;z-index:30;
+  background:none;border:none;cursor:pointer;
+  font-size:13px;font-weight:500;color:var(--muted-fg);
+  opacity:0;animation:fadeIn 0.5s 0.3s forwards;
+}
+@keyframes fadeIn{to{opacity:0.7}}
+
+/* ── Heading/body entrance ─────────────────────────────────── */
+.anim-up{opacity:0;transform:translateY(16px);animation:slideUp 0.7s cubic-bezier(0.22,1,0.36,1) forwards}
+@keyframes slideUp{to{opacity:1;transform:translateY(0)}}
+
+/* ── Screen2 pollutant bubbles ──────────────────────────────── */
+.bubble{
+  position:absolute;left:50%;top:50%;
+  display:flex;align-items:center;gap:6px;
+  border-radius:9999px;border:1px solid oklch(0.68 0.14 165 / 0.2);
+  background:rgba(255,255,255,0.85);backdrop-filter:blur(12px);
+  padding:4px 10px;
+  box-shadow:0 6px 16px oklch(0.78 0.11 210 / 0.18);
+  font-size:10px;font-weight:500;color:var(--fg);
+  opacity:0;animation:bubbleIn 0.9s cubic-bezier(0.22,1,0.36,1) forwards;
+}
+@keyframes bubbleIn{
+  from{opacity:0;transform:translate(-50%,-50%) scale(0.5)}
+  70%{opacity:1;transform:translate(calc(-50% + var(--tx)),calc(-50% + var(--ty))) scale(1.05)}
+  to{opacity:1;transform:translate(calc(-50% + var(--tx)),calc(-50% + var(--ty))) scale(1)}
+}
+.bubble svg{flex-shrink:0}
+
+/* ── Screen3 glass cards ────────────────────────────────────── */
+.glass-card{
+  display:flex;align-items:center;gap:10px;
+  border-radius:16px;padding:10px 12px;
+  background:rgba(255,255,255,0.55);
+  backdrop-filter:blur(20px) saturate(160%);
+  -webkit-backdrop-filter:blur(20px) saturate(160%);
+  border:1px solid rgba(255,255,255,0.70);
+  box-shadow:var(--shadow-card);
+  opacity:0;animation:cardIn 0.7s cubic-bezier(0.22,1,0.36,1) forwards;
+}
+@keyframes cardIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.glass-card .icon-box{
+  width:36px;height:36px;border-radius:12px;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--secondary);
+}
+.glass-card .card-title{font-size:13px;font-weight:600;line-height:1.2}
+.glass-card .card-sub{font-size:11px;color:var(--muted-fg);line-height:1.2}
+
+/* ── Screen3 wifi pulse ─────────────────────────────────────── */
+.wifi-ring{
+  position:absolute;border-radius:50%;
+  border:1px solid oklch(0.68 0.14 165 / 0.5);
+  animation:wifiPulse 3s ease-out infinite;
+}
+@keyframes wifiPulse{
+  from{width:80px;height:80px;opacity:0.6;margin-left:-40px;margin-top:-40px}
+  to{width:260px;height:260px;opacity:0;margin-left:-130px;margin-top:-130px}
+}
+
+/* ── Airflow waves (Screen1) ────────────────────────────────── */
+.airflow-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.airflow-svg path{
+  stroke:url(#waveGrad);stroke-width:1.5;fill:none;
+  stroke-dasharray:1;stroke-dashoffset:1;
+  animation:waveDraw 5s ease-in-out infinite;
+}
+@keyframes waveDraw{
+  0%{stroke-dashoffset:1;opacity:0}
+  30%{opacity:0.8}
+  50%{stroke-dashoffset:0}
+  100%{stroke-dashoffset:0;opacity:0;transform:translateX(60px)}
+}
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<!-- SPLASH SCREEN                                               -->
+<!-- ════════════════════════════════════════════════════════════ -->
+<div id="splash" class="screen active">
+  <div id="splashParticles" class="particles"></div>
+  <div class="glow"></div>
+  <div class="logo-wrap">
+    <img src="smarteco-logo.png" alt="SmartEco">
+    <div class="shimmer"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<!-- SCREEN 1 — Breathe Cleaner                                  -->
+<!-- ════════════════════════════════════════════════════════════ -->
+<div id="screen1" class="screen">
+  <button class="skip-btn" onclick="goTo(3)">Skip</button>
+  <div id="s1Particles" class="particles"></div>
+  <div class="ob-content ob-pt10">
+    <div class="image-area">
+      <div class="screen-glow" style="background:radial-gradient(circle,oklch(0.82 0.16 165 / 0.4),transparent 70%)"></div>
+      <svg class="airflow-svg" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid slice">
+        <defs><linearGradient id="waveGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="oklch(0.78 0.11 210)" stop-opacity="0"/>
+          <stop offset="50%" stop-color="oklch(0.78 0.11 210)" stop-opacity="0.55"/>
+          <stop offset="100%" stop-color="oklch(0.68 0.14 165)" stop-opacity="0"/>
+        </linearGradient></defs>
+        <path d="M -50 160 Q 100 130 200 160 T 450 160" style="animation-delay:0s"/>
+        <path d="M -50 185 Q 100 155 200 185 T 450 185" style="animation-delay:0.6s"/>
+        <path d="M -50 210 Q 100 180 200 210 T 450 210" style="animation-delay:1.2s"/>
+        <path d="M -50 235 Q 100 205 200 235 T 450 235" style="animation-delay:1.8s"/>
+      </svg>
+      <img class="device-img" src="smarteco-device.png" alt="SmartEco Device">
+    </div>
+    <h1 class="anim-up" style="animation-delay:0.3s">Breathe Cleaner.<br><span class="eco-text">Live Healthier.</span></h1>
+    <p class="body-text anim-up" style="animation-delay:0.45s">Monitor the air quality inside your home in real time and stay aware of invisible pollutants affecting your comfort and wellbeing.</p>
+    <div class="chips">
+      <span class="chip" style="animation-delay:0.6s">Real-Time Monitoring</span>
+      <span class="chip" style="animation-delay:0.7s">Smart Alerts</span>
+      <span class="chip" style="animation-delay:0.8s">Air Quality Insights</span>
+    </div>
+  </div>
+  <div class="bottom">
+    <div class="dots"><span class="dot active"></span><span class="dot inactive"></span><span class="dot inactive"></span></div>
+    <button class="cta-btn" onclick="goTo(2)">Next <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg><span class="shimmer"></span></button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<!-- SCREEN 2 — Understand Your Environment                      -->
+<!-- ════════════════════════════════════════════════════════════ -->
+<div id="screen2" class="screen">
+  <button class="skip-btn" onclick="goTo(3)">Skip</button>
+  <div id="s2Particles" class="particles"></div>
+  <div class="ob-content ob-pt24">
+    <div class="image-area">
+      <div class="screen-glow" style="background:radial-gradient(circle,oklch(0.9 0.08 210 / 0.45),transparent 70%)"></div>
+      <img class="device-img" src="smarteco-device.png" alt="SmartEco Device">
+      <div class="bubble" style="--tx:0px;--ty:-120px;animation-delay:0.6s"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg> CO₂</div>
+      <div class="bubble" style="--tx:85px;--ty:-85px;animation-delay:0.6s"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg> PM2.5</div>
+      <div class="bubble" style="--tx:120px;--ty:0px;animation-delay:0.85s"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg> Temp</div>
+      <div class="bubble" style="--tx:85px;--ty:85px;animation-delay:0.85s"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg> Humidity</div>
+      <div class="bubble" style="--tx:0px;--ty:120px;animation-delay:1.1s"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5"><path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"/><path d="M8.5 2h7"/></svg> VOC</div>
+      <div class="bubble" style="--tx:-85px;--ty:85px;animation-delay:1.1s"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg> CO</div>
+      <div class="bubble" style="--tx:-120px;--ty:0px;animation-delay:1.35s"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5"><path d="M2 22c1.25-.987 2.27-1.975 3.9-2.2 1.63-.225 2.7.6 4.1.6s2.47-.825 4.1-.6c1.63.225 2.65 1.213 3.9 2.2"/><path d="M12 2C6.5 2 2 6.5 2 12c0 1 .2 2 .5 3"/><path d="M22 12c0-1-.2-2-.5-3"/><path d="M12 2a10 10 0 0 1 10 10"/></svg> O₂</div>
+      <div class="bubble" style="--tx:-85px;--ty:-85px;animation-delay:1.35s"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3.5"/><path d="M12 18.5V22"/></svg> CH₂O</div>
+    </div>
+    <h1 class="anim-up" style="animation-delay:0.3s">Understand Your<br><span class="eco-text">Indoor Environment</span></h1>
+    <p class="body-text anim-up" style="animation-delay:0.7s">Track PM2.5, temperature, humidity, and harmful pollutants directly from your dashboard.</p>
+    <div class="chips">
+      <span class="chip" style="animation-delay:0.85s">Heat Map</span>
+      <span class="chip" style="animation-delay:0.95s">Map View</span>
+      <span class="chip" style="animation-delay:1.05s">Live Updates</span>
+    </div>
+  </div>
+  <div class="bottom">
+    <div class="dots"><span class="dot inactive"></span><span class="dot active"></span><span class="dot inactive"></span></div>
+    <button class="cta-btn" onclick="goTo(3)">Next <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg><span class="shimmer"></span></button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<!-- SCREEN 3 — Smart Monitoring Made Simple                     -->
+<!-- ════════════════════════════════════════════════════════════ -->
+<div id="screen3" class="screen">
+  <div id="s3Particles" class="particles"></div>
+  <div class="ob-content ob-pt24">
+    <div class="image-area">
+      <div class="wifi-ring" style="left:50%;top:50%;animation-delay:0s"></div>
+      <div class="wifi-ring" style="left:50%;top:50%;animation-delay:1s"></div>
+      <div class="wifi-ring" style="left:50%;top:50%;animation-delay:2s"></div>
+      <div class="screen-glow" style="background:radial-gradient(circle,oklch(0.82 0.16 165 / 0.35),transparent 70%)"></div>
+      <img class="device-img" src="smarteco-device.png" alt="SmartEco Device">
+      <!-- Notification cards — all close to device, overlapping edges -->
+      <div style="position:absolute;left:0;top:20px;z-index:20;width:140px">
+        <div class="glass-card" style="animation-delay:0.4s">
+          <div class="icon-box" style="color:var(--primary)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+          </div>
+          <div><p class="card-title">Air Quality Improved</p><p class="card-sub">Now in healthy range</p></div>
+        </div>
+      </div>
+      <div style="position:absolute;right:0;top:25px;z-index:20;width:140px">
+        <div class="glass-card" style="animation-delay:0.6s">
+          <div class="icon-box" style="color:#f59e0b">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          </div>
+          <div><p class="card-title">Moderate Pollution</p><p class="card-sub">PM2.5 rising in kitchen</p></div>
+        </div>
+      </div>
+      <div style="position:absolute;left:0;bottom:10px;z-index:20;width:140px">
+        <div class="glass-card" style="animation-delay:0.8s">
+          <div class="icon-box" style="color:oklch(0.6 0.13 220)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/></svg>
+          </div>
+          <div><p class="card-title">Device Connected</p><p class="card-sub">Living room · Online</p></div>
+        </div>
+      </div>
+    </div>
+    <h1 class="anim-up" style="animation-delay:0.9s">Smart Monitoring<br><span class="eco-text">Made Simple</span></h1>
+    <p class="body-text anim-up" style="animation-delay:1.0s">Receive instant alerts, monitor trends, and keep your indoor spaces healthier for your family and workspace.</p>
+    <div class="chips">
+      <span class="chip" style="animation-delay:1.1s">Instant Notifications</span>
+      <span class="chip" style="animation-delay:1.2s">Easy Wi-Fi Setup</span>
+      <span class="chip" style="animation-delay:1.3s">Smart Insights</span>
+    </div>
+  </div>
+  <div class="bottom">
+    <div class="dots"><span class="dot inactive"></span><span class="dot inactive"></span><span class="dot active"></span></div>
+    <button class="cta-btn" onclick="onGetStarted()">Get Started <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg><span class="shimmer"></span></button>
+  </div>
+</div>
+
+<script>
+// ── Particle generator ────────────────────────────────────────
+function createParticles(containerId, count, color) {
+  const c = document.getElementById(containerId);
+  if (!c) return;
+  const bg = color === 'aqua' ? 'var(--aqua-glow)' : 'var(--primary-glow)';
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('span');
+    el.className = 'particle';
+    const size = 2 + Math.random() * 4;
+    el.style.cssText = `
+      left:${Math.random()*100}%;top:${Math.random()*100}%;
+      width:${size}px;height:${size}px;
+      background:${bg};box-shadow:0 0 ${size*3}px ${bg};
+      --dur:${6+Math.random()*6}s;--delay:${Math.random()*4}s;
+    `;
+    c.appendChild(el);
+  }
+}
+createParticles('splashParticles', 24, 'primary');
+createParticles('s1Particles', 14, 'primary');
+createParticles('s2Particles', 12, 'aqua');
+createParticles('s3Particles', 16, 'primary');
+
+// ── Screen navigation ─────────────────────────────────────────
+let currentScreen = 0;
+const screens = ['splash','screen1','screen2','screen3'];
+
+function goTo(idx) {
+  const cur = document.getElementById(screens[currentScreen]);
+  const nxt = document.getElementById(screens[idx]);
+  if (cur) { cur.classList.remove('active'); cur.classList.add('exit'); }
+  // Reset animations for the new screen
+  if (nxt) {
+    nxt.classList.remove('exit');
+    // Force reflow to restart CSS animations
+    void nxt.offsetWidth;
+    nxt.classList.add('active');
+  }
+  currentScreen = idx;
+}
+
+// Auto-dismiss splash after 3.8s
+setTimeout(function() { goTo(1); }, 3800);
+
+// ── Bridge to React Native ────────────────────────────────────
+function onGetStarted() {
+  if (window.ReactNativeWebView) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ONBOARDING_DONE' }));
+  }
+}
+</script>
+</body>
+</html>
