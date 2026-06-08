@@ -719,8 +719,10 @@ const WebViewScreen = () => {
   };
 
   // Handles DOWNLOAD_FILE messages: writes the base64 payload to disk and saves it
-  // to the public Downloads folder (Android) or the Save-to-Files sheet (iOS).
+  // to the public Downloads folder. Android only.
   const handleDownloadFile = async ({ fileName, mimeType, data }) => {
+    if (Platform.OS !== 'android') return;
+
     const safeName = (fileName && String(fileName).trim()) || `download_${Date.now()}`;
     const type = mimeType || 'application/octet-stream';
     const base64 = stripBase64Prefix(data);
@@ -736,88 +738,57 @@ const WebViewScreen = () => {
     }
 
     try {
-      if (Platform.OS === 'android') {
-        const hasPermission = await requestLegacyStoragePermission();
-        if (!hasPermission) {
-          sendToWeb({
-            action: 'DOWNLOAD_FILE_RESULT',
-            success: false,
-            fileName: safeName,
-            error: 'Storage permission denied.',
-          });
-          Alert.alert(
-            'Permission Required',
-            'Storage permission is needed to save files. Open settings to grant it?',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => Linking.openSettings() },
-            ],
-          );
-          return;
-        }
-
-        // Write to cache first, then publish into the public Downloads collection.
-        const tempPath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${safeName}`;
-        await ReactNativeBlobUtil.fs.writeFile(tempPath, base64, 'base64');
-
-        if (Platform.Version >= 29) {
-          // Scoped storage: MediaStore handles the public Downloads entry, no permission needed.
-          await ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
-            { name: safeName, parentFolder: '', mimeType: type },
-            'Download',
-            tempPath,
-          );
-        } else {
-          // Legacy: copy into the public Downloads dir and register with Download Manager.
-          const destPath = `${ReactNativeBlobUtil.fs.dirs.LegacyDownloadDir}/${safeName}`;
-          await ReactNativeBlobUtil.fs.cp(tempPath, destPath);
-          ReactNativeBlobUtil.android.addCompleteDownload({
-            title: safeName,
-            description: 'Download complete',
-            mime: type,
-            path: destPath,
-            showNotification: true,
-          });
-        }
-
-        ReactNativeBlobUtil.fs.unlink(tempPath).catch(() => {});
-
+      const hasPermission = await requestLegacyStoragePermission();
+      if (!hasPermission) {
         sendToWeb({
           action: 'DOWNLOAD_FILE_RESULT',
-          success: true,
+          success: false,
           fileName: safeName,
-          message: `${safeName} saved to Downloads.`,
+          error: 'Storage permission denied.',
         });
-      } else {
-        // iOS: write to the app's Documents dir, then open the Save-to-Files / share sheet.
-        const path = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/${safeName}`;
-        await ReactNativeBlobUtil.fs.writeFile(path, base64, 'base64');
-
-        try {
-          await Share.open({
-            url: `file://${path}`,
-            type,
-            filename: safeName,
-            saveToFiles: true,
-          });
-          sendToWeb({
-            action: 'DOWNLOAD_FILE_RESULT',
-            success: true,
-            fileName: safeName,
-            message: `${safeName} saved.`,
-          });
-        } catch (shareErr) {
-          // react-native-share throws when the user dismisses the sheet — treat as a cancel.
-          const msg = (shareErr && shareErr.message ? shareErr.message : '').toLowerCase();
-          const cancelled = msg.includes('cancel') || msg.includes('dismiss') || msg.includes('user did not share');
-          sendToWeb({
-            action: 'DOWNLOAD_FILE_RESULT',
-            success: false,
-            fileName: safeName,
-            error: cancelled ? 'Save cancelled.' : (shareErr?.message || 'Failed to save file.'),
-          });
-        }
+        Alert.alert(
+          'Permission Required',
+          'Storage permission is needed to save files. Open settings to grant it?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ],
+        );
+        return;
       }
+
+      // Write to cache first, then publish into the public Downloads collection.
+      const tempPath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${safeName}`;
+      await ReactNativeBlobUtil.fs.writeFile(tempPath, base64, 'base64');
+
+      if (Platform.Version >= 29) {
+        // Scoped storage: MediaStore handles the public Downloads entry, no permission needed.
+        await ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
+          { name: safeName, parentFolder: '', mimeType: type },
+          'Download',
+          tempPath,
+        );
+      } else {
+        // Legacy: copy into the public Downloads dir and register with Download Manager.
+        const destPath = `${ReactNativeBlobUtil.fs.dirs.LegacyDownloadDir}/${safeName}`;
+        await ReactNativeBlobUtil.fs.cp(tempPath, destPath);
+        ReactNativeBlobUtil.android.addCompleteDownload({
+          title: safeName,
+          description: 'Download complete',
+          mime: type,
+          path: destPath,
+          showNotification: true,
+        });
+      }
+
+      ReactNativeBlobUtil.fs.unlink(tempPath).catch(() => {});
+
+      sendToWeb({
+        action: 'DOWNLOAD_FILE_RESULT',
+        success: true,
+        fileName: safeName,
+        message: `${safeName} saved to Downloads.`,
+      });
     } catch (e) {
       console.log('DOWNLOAD_FILE error:', e);
       sendToWeb({
@@ -833,6 +804,8 @@ const WebViewScreen = () => {
   // print dialog. Images are embedded in HTML so they scale to the page; other
   // printable docs (e.g. PDF) are written to a temp file and printed directly.
   const handlePrintFile = async ({ fileName, mimeType, data }) => {
+    if (Platform.OS !== 'android') return;
+
     const type = mimeType || 'application/octet-stream';
     const base64 = stripBase64Prefix(data);
 
@@ -887,6 +860,8 @@ const WebViewScreen = () => {
   // the base64 payload (e.g. the QR image) is written to a temp file and shared
   // alongside any text/url; otherwise just the url/text is shared.
   const handleShare = async ({ url, title, text, fileName, mimeType, data }) => {
+    if (Platform.OS !== 'android') return;
+
     const base64 = stripBase64Prefix(data);
     let tempPath = null;
 
