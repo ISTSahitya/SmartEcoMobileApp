@@ -1007,11 +1007,7 @@ const WebViewScreen = ({ route }) => {
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
-<<<<<<< HEAD
         source={{ uri: 'https://app.smarteco.ai/smartecodev' }}
-=======
-        source={{ uri: 'https://app.smarteco.ai/smartecodev/' }}
->>>>>>> origin/newdeviceonboarding
         style={[styles.webview, { backgroundColor: '#fff' }]}
         contentInsetAdjustmentBehavior="automatic"
         androidLayerType="hardware"
