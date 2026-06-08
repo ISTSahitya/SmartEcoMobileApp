@@ -176,72 +176,33 @@ const WebViewScreen = ({ route }) => {
     }
   };
 
-  // iOS forbids listing nearby Wi-Fi networks (no public API), so we only
-  // return the currently connected SSID on iOS.
-  const requestWifiScan = async () => {
+  //Requesting wifi scan for getting any wifi connected
+  const scanWifiNetworks = async () => {
     try {
-      if (Platform.OS === 'ios') {
-        let currentSSID = null;
-        try {
-          currentSSID = await WifiManager.getCurrentWifiSSID();
-        } catch (_) {}
+      const locationReady = await checkAndAskLocation();
+      if (!locationReady) {
         sendToWeb({
           action: 'WIFI_SCAN_RESULT',
-          success: false,
-          platform: 'ios',
-          networks: currentSSID
-            ? [{ SSID: currentSSID, BSSID: '', encrypted: false, level: 0 }]
-            : [],
-          error: 'iOS does not allow scanning nearby Wi-Fi networks. Please switch networks from Settings.',
-        });
-        return;
-      }
-
-      const ready = await checkAndAskLocation();
-      if (!ready) {
-        sendToWeb({
-          action: 'WIFI_SCAN_RESULT',
-          success: false,
-          platform: 'android',
           networks: [],
-          error: 'Location permission/services required to scan Wi-Fi.',
+          error: 'Location permission required',
         });
         return;
       }
 
-      const raw = await WifiManager.loadWifiList();
-      const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? JSON.parse(raw) : [];
-
-      const seen = new Set();
-      console.log(list);
-      const networks = list
-        .filter((n) => n && n.SSID && !seen.has(n.SSID) && seen.add(n.SSID))
-        .map((n) => ({
-          SSID: n.SSID,
-          BSSID: n.BSSID || '',
-          encrypted: typeof n.capabilities === 'string'
-            ? /WPA|WEP|PSK|EAP/i.test(n.capabilities)
-            : false,
-          level: typeof n.level === 'number' ? n.level : -100,
-          timestamp: n.timestamp,
-          frequency: n.frequency
-        }));
-
-        console.log(networks);
-
+      const [networks, connectedSSID] = await Promise.all([
+        WifiManager.loadWifiList(),
+        getCurrentWifiInfo(),
+      ]);
       sendToWeb({
         action: 'WIFI_SCAN_RESULT',
-        success: true,
-        platform: 'android',
         networks,
+        currentWifi: { ssid: connectedSSID.ssid },
       });
     } catch (e) {
       sendToWeb({
         action: 'WIFI_SCAN_RESULT',
-        success: false,
-        platform: Platform.OS,
         networks: [],
-        error: e instanceof Error ? e.message : 'Wi-Fi scan failed. Please try again.',
+        error: e.toString(),
       });
     }
   };
@@ -249,6 +210,7 @@ const WebViewScreen = ({ route }) => {
   const onWebMessage = event => {
     try {
       const message = JSON.parse(event.nativeEvent.data);
+      console.log('[WebView → Native] Received:', JSON.stringify(message));
 
       switch (message.action) {
         case 'APP_VERSION_INFO':
@@ -257,7 +219,7 @@ const WebViewScreen = ({ route }) => {
           break;
 
         case 'SCAN_WIFI':
-          requestWifiScan();
+          scanWifiNetworks();
           break;
 
         case 'GET_CONNECTED_WIFI':
@@ -278,18 +240,18 @@ const WebViewScreen = ({ route }) => {
           }, 3000);
           break;
 
-        // case 'CONNECT_WIFI':
-        //   if (message.ssid) {
-        //     const { ssid, password } = message;
-        //     connectToWifi(ssid, password);
-        //   } else {
-        //     sendToWeb({
-        //       action: 'WIFI_CONNECT_RESULT',
-        //       success: false,
-        //       error: 'SSID and password required',
-        //     });
-        //   }
-        //   break;
+        case 'CONNECT_WIFI':
+          if (message.ssid) {
+            const { ssid, password } = message;
+            connectToWifi(ssid, password);
+          } else {
+            sendToWeb({
+              action: 'WIFI_CONNECT_RESULT',
+              success: false,
+              error: 'SSID is required',
+            });
+          }
+          break;
 
         case 'OPEN_APP_SETTINGS':
           if (Platform.OS === 'ios') {
@@ -384,6 +346,17 @@ const WebViewScreen = ({ route }) => {
           });
           break;
         }
+        case 'RELEASE_WIFI_BINDING':
+          releaseNetworkBinding();
+          break;
+
+        case 'CHECK_LOCATION':
+          checkAndAskLocation();
+          break;
+
+        case 'SCAN_WIFI_NETWORKS':
+          scanWifiNetworks();
+          break;
 
         default:
           console.log('Unknown action:', message.action);
@@ -416,6 +389,7 @@ const WebViewScreen = ({ route }) => {
   };
 
   const sendToWeb = data => {
+    console.log('[Native → WebView] Sending:', JSON.stringify(data));
     webviewRef.current?.postMessage(JSON.stringify(data));
   };
 
@@ -968,47 +942,79 @@ const WebViewScreen = ({ route }) => {
     }
   };
 
-  // const connectToWifi = async (ssid, password) => {
-  //   try {
-  //     const locationReady = await checkAndAskLocation();
-  //     if (!locationReady) {
-  //       sendToWeb({
-  //         action: 'WIFI_CONNECT_RESULT',
-  //         success: false,
-  //         error: 'Location permission required',
-  //       });
-  //       return;
-  //     }
+  const forceWifiUsage = async (enable) => {
+    await WifiManager.forceWifiUsageWithOptions(enable, { noInternet: enable });
+  };
 
-  //     // Connect to WiFi
-  //     await WifiManager.connectToProtectedSSID(ssid, password, false, false);
+  const releaseNetworkBinding = async () => {
+    try {
+      await forceWifiUsage(false);
+    } catch (e) {
+      console.log('forceWifiUsage release error', e);
+    }
 
-  //     // Wait a bit and verify connection
-  //     setTimeout(async () => {
-  //       const connectedSSID = await WifiManager.getCurrentWifiSSID();
-  //       const success = connectedSSID === ssid;
+    try {
+      await WifiManager.disconnect();
+    } catch (e) {
+      console.log('disconnect error', e);
+    }
 
-  //       sendToWeb({
-  //         action: 'WIFI_CONNECT_RESULT',
-  //         success,
-  //         currentWifi: {
-  //           ssid: connectedSSID,
-  //           password: password,
-  //           note: "Wifi details"
-  //         },
-  //         message: success
-  //           ? `Connected to ${ssid}`
-  //           : 'Connection failed or timed out',
-  //       });
-  //     }, 3000);
-  //   } catch (e) {
-  //     sendToWeb({
-  //       action: 'WIFI_CONNECT_RESULT',
-  //       success: false,
-  //       error: e.toString(),
-  //     });
-  //   }
-  // };
+    sendToWeb({ action: 'WIFI_BINDING_RELEASED', success: true });
+  };
+
+  const connectToWifi = async (ssid, password) => {
+    try {
+      const locationReady = await checkAndAskLocation();
+      if (!locationReady) {
+        sendToWeb({
+          action: 'WIFI_CONNECT_RESULT',
+          success: false,
+          error: 'Location permission required',
+        });
+        return;
+      }
+
+      await WifiManager.connectToProtectedSSID(ssid, password || '', false, false);
+
+      // Route app process traffic through the IoT AP (it has no internet)
+      try {
+        await forceWifiUsage(true);
+      } catch (e) {
+        console.log('forceWifiUsage enable error', e);
+      }
+
+      // Wait a bit and verify connection
+      setTimeout(async () => {
+        const connectedSSID = await WifiManager.getCurrentWifiSSID();
+        const success = connectedSSID === ssid;
+
+        sendToWeb({
+          action: 'WIFI_CONNECT_RESULT',
+          success,
+          currentWifi: {
+            ssid: connectedSSID,
+            note: 'Wifi details',
+          },
+          message: success
+            ? `Connected to ${ssid}`
+            : 'Connection failed or timed out',
+        });
+      }, 3000);
+    } catch (e) {
+      // Release any partial binding so the app isn't left stranded
+      try {
+        await forceWifiUsage(false);
+      } catch (releaseErr) {
+        console.log('forceWifiUsage release error on connect failure', releaseErr);
+      }
+
+      sendToWeb({
+        action: 'WIFI_CONNECT_RESULT',
+        success: false,
+        error: e.toString(),
+      });
+    }
+  };
 
   return (
     <View
@@ -1026,7 +1032,11 @@ const WebViewScreen = ({ route }) => {
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
+<<<<<<< HEAD
         source={{ uri: 'https://app.smarteco.ai/smartecodev' }}
+=======
+        source={{ uri: 'https://app.smarteco.ai/smartecodev/' }}
+>>>>>>> origin/newdeviceonboarding
         style={[styles.webview, { backgroundColor: '#fff' }]}
         contentInsetAdjustmentBehavior="automatic"
         androidLayerType="hardware"
@@ -1041,7 +1051,15 @@ const WebViewScreen = ({ route }) => {
             <Text style={styles.loadingText}>Loading SmartEco...</Text>
           </View>
         )}
-        onLoadEnd={() => setIsLoading(false)}
+        onLoadEnd={async () => {
+          setIsLoading(false);
+          const connectedSSID = await getCurrentWifiInfo();
+          sendToWeb({
+            action: 'WIFI_CONNECT_RESULT',
+            success: !!connectedSSID.ssid,
+            currentWifi: { ssid: connectedSSID.ssid },
+          });
+        }}
         onError={() => setIsLoading(false)}
         onHttpError={() => setIsLoading(false)}
         injectedJavaScriptBeforeContentLoaded={`
