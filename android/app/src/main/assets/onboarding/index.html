@@ -390,8 +390,17 @@ function goTo(idx) {
   currentScreen = idx;
 }
 
+// Check if returning user (splash only, no onboarding screens)
+var splashOnly = window.location.search.indexOf('splashOnly=true') !== -1;
+
 // Auto-dismiss splash after 3.8s
-setTimeout(function() { goTo(1); }, 3800);
+setTimeout(function() {
+  if (splashOnly) {
+    onGetStarted();
+  } else {
+    goTo(1);
+  }
+}, 3800);
 
 // ── Bridge to React Native ────────────────────────────────────
 function onGetStarted() {

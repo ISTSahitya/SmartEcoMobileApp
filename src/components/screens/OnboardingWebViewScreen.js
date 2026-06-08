@@ -2,18 +2,16 @@ import React, { useRef, useEffect } from "react";
 import { View, StyleSheet, StatusBar } from "react-native";
 import WebView from "react-native-webview";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import RNBootSplash from "react-native-bootsplash";
 
 // Loads from bundled Android assets — no server needed
-const ONBOARDING_URI = "file:///android_asset/onboarding/index.html";
+const ONBOARDING_BASE_URI = "file:///android_asset/onboarding/index.html";
 
-export default function OnboardingWebViewScreen({ navigation }) {
+export default function OnboardingWebViewScreen({ navigation, route }) {
+  const splashOnly = route.params?.splashOnly ?? false;
+  const ONBOARDING_URI = splashOnly
+    ? `${ONBOARDING_BASE_URI}?splashOnly=true`
+    : ONBOARDING_BASE_URI;
   const webViewRef = useRef(null);
-
-  useEffect(() => {
-    // Hide native boot splash — Lovable HTML has its own splash
-    RNBootSplash.hide({ fade: true });
-  }, []);
 
   const handleMessage = async (event) => {
     try {

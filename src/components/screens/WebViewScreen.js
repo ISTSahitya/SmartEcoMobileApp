@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   PermissionsAndroid,
   BackHandler,
@@ -10,11 +10,13 @@ import {
   Text,
   NativeModules,
   AppState,
+  Animated,
   ActivityIndicator,
 } from 'react-native';
 import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import WifiManager from 'react-native-wifi-reborn';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import Share from 'react-native-share';
@@ -25,10 +27,14 @@ import UpdateModal from '../UpdateModal';
 
 const { VpnModule } = NativeModules;
 
-const WebViewScreen = () => {
+const ONBOARDING_BASE_URI = 'file:///android_asset/onboarding/index.html';
+
+const WebViewScreen = ({ route }) => {
   const insets = useSafeAreaInsets();
   const [canGoBack, setCanGoBack] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [showSplash, setShowSplash] = useState(true);
+  const splashOpacity = useRef(new Animated.Value(1)).current;
   const {
     modalVisible,
     updateType,
@@ -38,6 +44,28 @@ const WebViewScreen = () => {
     skipVersion,
   } = useVersionCheck();
   const lastVersionData = useRef(null);
+
+  const splashOnly = route.params?.splashOnly ?? false;
+  const splashUri = splashOnly
+    ? `${ONBOARDING_BASE_URI}?splashOnly=true`
+    : ONBOARDING_BASE_URI;
+
+  // When the HTML splash sends ONBOARDING_DONE, fade it out
+  const handleSplashMessage = useCallback(async (event) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'ONBOARDING_DONE') {
+        if (!splashOnly) {
+          await AsyncStorage.setItem('ONBOARDING_DONE', 'true');
+        }
+        Animated.timing(splashOpacity, {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: true,
+        }).start(() => setShowSplash(false));
+      }
+    } catch (_) {}
+  }, [splashOnly, splashOpacity]);
 
   // Re-check version when app comes to foreground
   useEffect(() => {
@@ -1027,11 +1055,24 @@ const WebViewScreen = () => {
           setCanGoBack(navState.canGoBack);
         }}
       />
-      {isLoading && (
+      {isLoading && !showSplash && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="small" color="#0F796B" />
           <Text style={styles.loadingText}>Loading SmartEco...</Text>
         </View>
+      )}
+      {showSplash && (
+        <Animated.View style={[styles.splashOverlay, { opacity: splashOpacity }]}>
+          <WebView
+            source={{ uri: splashUri }}
+            style={{ flex: 1 }}
+            javaScriptEnabled
+            domStorageEnabled
+            allowFileAccess
+            onMessage={handleSplashMessage}
+            originWhitelist={['*']}
+          />
+        </Animated.View>
       )}
       <UpdateModal
         visible={modalVisible}
@@ -1063,6 +1104,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#0F796B',
     fontWeight: '500',
+  },
+  splashOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
+    backgroundColor: '#fff',
   },
 });
 
