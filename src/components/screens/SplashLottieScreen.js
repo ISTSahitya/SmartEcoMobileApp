@@ -1,7 +1,6 @@
 // src/screens/SplashLottieScreen.js
 import React, { useRef, useEffect } from "react";
 import { StyleSheet, Animated, ImageBackground, Dimensions, View } from "react-native";
-import RNBootSplash from "react-native-bootsplash";
 
 const { width: screenWidth } = Dimensions.get("window");
 const gifWidth = screenWidth * 0.45;
@@ -40,11 +39,6 @@ export default function SplashLottieScreen({ navigation }) {
             }),
         ]).start();
 
-        // Hide native bootsplash after a small delay to ensure component is rendered
-        const hideSplashTimer = setTimeout(() => {
-            RNBootSplash.hide({ fade: true });
-        }, 100);
-
         // Navigate after animation (2.5 seconds)
         const navigateTimer = setTimeout(() => {
             if (navigation) {
@@ -53,7 +47,6 @@ export default function SplashLottieScreen({ navigation }) {
         }, 2500);
 
         return () => {
-            clearTimeout(hideSplashTimer);
             clearTimeout(navigateTimer);
         };
     }, [navigation]);

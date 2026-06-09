@@ -1,9 +1,26 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { PermissionsAndroid, BackHandler, Alert, Linking, Platform, StatusBar, View, NativeModules, AppState } from 'react-native';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import {
+  PermissionsAndroid,
+  BackHandler,
+  Alert,
+  Linking,
+  Platform,
+  StatusBar,
+  View,
+  Text,
+  NativeModules,
+  AppState,
+  Animated,
+  ActivityIndicator,
+} from 'react-native';
 import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import WifiManager from 'react-native-wifi-reborn';
+import ReactNativeBlobUtil from 'react-native-blob-util';
+import Share from 'react-native-share';
+import RNPrint from 'react-native-print';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
 import NetInfo from "@react-native-community/netinfo";
 //import { check, request, PERMISSIONS, RESULTS } from 'react-native-permissions';
@@ -32,8 +49,14 @@ const extractDeviceIdFromDeviceSsid = ssid => {
   const separatorIndex = normalizedSsid.indexOf('_');
   return separatorIndex >= 0 ? normalizedSsid.slice(separatorIndex + 1) : '';
 };
+import useVersionCheck from '../../hooks/useVersionCheck';
+import UpdateModal from '../UpdateModal';
 
-const WebViewScreen = () => {
+const { VpnModule } = NativeModules;
+
+const ONBOARDING_BASE_URI = 'file:///android_asset/onboarding/index.html';
+
+const WebViewScreen = ({ route }) => {
   const insets = useSafeAreaInsets();
   const [history, setHistory] = useState([]);
   const [currentUrl, setCurrentUrl] = useState(null);
@@ -51,6 +74,52 @@ const WebViewScreen = () => {
     });
   };
 
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showSplash, setShowSplash] = useState(true);
+  const splashOpacity = useRef(new Animated.Value(1)).current;
+  const {
+    modalVisible,
+    updateType,
+    updateData,
+    handleVersionData,
+    dismiss,
+    skipVersion,
+  } = useVersionCheck();
+  const lastVersionData = useRef(null);
+
+  const splashOnly = route.params?.splashOnly ?? false;
+  const splashUri = splashOnly
+    ? `${ONBOARDING_BASE_URI}?splashOnly=true`
+    : ONBOARDING_BASE_URI;
+
+  // When the HTML splash sends ONBOARDING_DONE, fade it out
+  const handleSplashMessage = useCallback(async (event) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'ONBOARDING_DONE') {
+        if (!splashOnly) {
+          await AsyncStorage.setItem('ONBOARDING_DONE', 'true');
+        }
+        Animated.timing(splashOpacity, {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: true,
+        }).start(() => setShowSplash(false));
+      }
+    } catch (_) {}
+  }, [splashOnly, splashOpacity]);
+
+  // Re-check version when app comes to foreground
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (nextAppState === 'active' && lastVersionData.current) {
+        handleVersionData(lastVersionData.current);
+      }
+    });
+    return () => subscription.remove();
+  }, [handleVersionData]);
+
   const ensureProvisionAttempt = reason => {
     if (!provisionAttemptRef.current) {
       provisionAttemptRef.current = Date.now();
@@ -62,34 +131,33 @@ const WebViewScreen = () => {
   /* deeplink setup for oauth login */
   useEffect(() => {
     const handleDeepLink = ({ url }) => {
-    try {
-      console.log("Deep link received:", url);
+      try {
+        console.log('Deep link received:', url);
 
-      const parsedUrl = new URL(url);
-      const token = parsedUrl.searchParams.get("token");
-      const error = parsedUrl.searchParams.get("error");
-      const state = parsedUrl.searchParams.get("state");
-      const code = parsedUrl.searchParams.get("code");
+        const parsedUrl = new URL(url);
+        const token = parsedUrl.searchParams.get('token');
+        const error = parsedUrl.searchParams.get('error');
+        const state = parsedUrl.searchParams.get('state');
+        const code = parsedUrl.searchParams.get('code');
 
-      if (error) {
-        sendToWeb({ type: "OAUTH_ERROR", error });
-        return;
+        if (error) {
+          sendToWeb({ type: 'OAUTH_ERROR', error });
+          return;
+        }
+
+        if (token || code) {
+          sendToWeb({
+            type: 'OAUTH_SUCCESS',
+            access_token: token || undefined,
+            code: code || undefined,
+            state: state || undefined,
+          });
+        }
+      } catch (e) {
+        console.log('Deep link parse error:', e);
+        sendToWeb({ type: 'OAUTH_ERROR', error: 'Internal server error' });
       }
-
-      if (token || code) {
-        sendToWeb({
-          type: "OAUTH_SUCCESS",
-          access_token: token || undefined,
-          code: code || undefined,
-          state: state || undefined,
-        });
-      }
-    }
-     catch (e) {
-      console.log("Deep link parse error:", e);
-      sendToWeb({ type: "OAUTH_ERROR", error : 'Internal server error' });
-    }
-  }
+    };
     const urlSubscription = Linking.addEventListener('url', handleDeepLink);
 
     return () => {
@@ -122,26 +190,7 @@ const WebViewScreen = () => {
     );
 
     return () => backHandler.remove();
-  }, [history, currentUrl]);
-
-  useEffect(() => {
-    const appStateSubscription = AppState.addEventListener('change', nextAppState => {
-      const wasAwayFromApp = appStateRef.current.match(/inactive|background/);
-      appStateRef.current = nextAppState;
-
-      if (Platform.OS === 'ios' && wasAwayFromApp && nextAppState === 'active' && pendingIosWifiCheckRef.current) {
-        logProvisionStep('ios_returned_to_app_after_wifi_settings');
-        pendingIosWifiCheckRef.current = false;
-        setTimeout(() => {
-          checkWifiConnectionRef.current?.().catch(error => {
-            logProvisionStep('ios_check_wifi_after_return_failed', { error: error?.toString?.() });
-          });
-        }, 1200);
-      }
-    });
-
-    return () => appStateSubscription.remove();
-  }, []);
+  }, [canGoBack]);
 
   const webviewRef = useRef(null);
   const checkAndAskLocation = async () => {
@@ -193,51 +242,75 @@ const WebViewScreen = () => {
     }
   };
 
-  //Requesting wifi scan for getting any wifi connected
+  // iOS forbids listing nearby Wi-Fi networks (no public API), so we only
+  // return the currently connected SSID on iOS.
   const requestWifiScan = async () => {
     try {
-      const locationReady = await checkAndAskLocation();
-      if (!locationReady) return;
-
-      // 3️⃣ Now scan WiFi
-      const connectedSSID = await getCurrentWifiInfo();
-      if (connectedSSID.ssid) {
+      if (Platform.OS === 'ios') {
+        let currentSSID = null;
+        try {
+          currentSSID = await WifiManager.getCurrentWifiSSID();
+        } catch (_) {}
         sendToWeb({
-          action: 'WIFI_CONNECT_RESULT',
-          success: true,
-          currentWifi: {
-            ssid: connectedSSID.ssid,
-          }
-        });
-      } else {
-        sendToWeb({
-          action: "WIFI_CONNECT_RESULT",
-          currentWifi: {
-            ssid: "No wifi connected"
-          },
+          action: 'WIFI_SCAN_RESULT',
           success: false,
-          error: 'Connection failed. Please try again...'
-        })
+          platform: 'ios',
+          networks: currentSSID
+            ? [{ SSID: currentSSID, BSSID: '', encrypted: false, level: 0 }]
+            : [],
+          error: 'iOS does not allow scanning nearby Wi-Fi networks. Please switch networks from Settings.',
+        });
+        return;
       }
+
+      const ready = await checkAndAskLocation();
+      if (!ready) {
+        sendToWeb({
+          action: 'WIFI_SCAN_RESULT',
+          success: false,
+          platform: 'android',
+          networks: [],
+          error: 'Location permission/services required to scan Wi-Fi.',
+        });
+        return;
+      }
+
+      const raw = await WifiManager.loadWifiList();
+      const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? JSON.parse(raw) : [];
+
+      const seen = new Set();
+      console.log(list);
+      const networks = list
+        .filter((n) => n && n.SSID && !seen.has(n.SSID) && seen.add(n.SSID))
+        .map((n) => ({
+          SSID: n.SSID,
+          BSSID: n.BSSID || '',
+          encrypted: typeof n.capabilities === 'string'
+            ? /WPA|WEP|PSK|EAP/i.test(n.capabilities)
+            : false,
+          level: typeof n.level === 'number' ? n.level : -100,
+          timestamp: n.timestamp,
+          frequency: n.frequency
+        }));
+
+        console.log(networks);
+
+      sendToWeb({
+        action: 'WIFI_SCAN_RESULT',
+        success: true,
+        platform: 'android',
+        networks,
+      });
     } catch (e) {
       sendToWeb({
-          action: 'WIFI_CONNECT_RESULT',
-          success: false,
-          error: 'Connection timeout. Please try again...'
-        });
+        action: 'WIFI_SCAN_RESULT',
+        success: false,
+        platform: Platform.OS,
+        networks: [],
+        error: e instanceof Error ? e.message : 'Wi-Fi scan failed. Please try again.',
+      });
     }
   };
-
-  // const onWebMessage = event => {
-  //   try {
-  //     const message = JSON.parse(event.nativeEvent.data);
-  //     if (message.action === 'SCAN_WIFI') {
-  //       requestWifiScan();
-  //     }
-  //   } catch (err) {
-  //     console.log('Bad message from web:', err);
-  //   }
-  // };
 
   const onWebMessage = event => {
     try {
@@ -265,10 +338,19 @@ const WebViewScreen = () => {
           requestWifiScan();
           break;
 
+        case 'GET_CONNECTED_WIFI':
+          getConnectedWifiDetails();
+          break;
+
         case 'GET_SYSTEM_STATUS':
           const interval = setInterval(async () => {
             const systemStatus = await getSystemStatus();
-            if (systemStatus.success && systemStatus.locationPermission && !systemStatus.mobileData) {
+            if (
+              systemStatus.success &&
+              systemStatus.locationPermission &&
+              !systemStatus.mobileData &&
+              !systemStatus.isVpnOn
+            ) {
               clearInterval(interval);
             }
           }, 3000);
@@ -398,6 +480,41 @@ const WebViewScreen = () => {
             sendToWeb({ action: 'WIFI_BINDING_RELEASED' });
           };
           releaseBinding();
+          sendWifiCredentials(message.payload);
+          break;
+        }
+
+        case 'DOWNLOAD_FILE': {
+          // Web sends either a flat message or one nested under `payload`.
+          const filePayload = message.payload || message;
+          handleDownloadFile({
+            fileName: filePayload.fileName,
+            mimeType: filePayload.mimeType,
+            data: filePayload.data,
+          });
+          break;
+        }
+
+        case 'PRINT_FILE': {
+          const printPayload = message.payload || message;
+          handlePrintFile({
+            fileName: printPayload.fileName,
+            mimeType: printPayload.mimeType,
+            data: printPayload.data,
+          });
+          break;
+        }
+
+        case 'SHARE': {
+          const sharePayload = message.payload || message;
+          handleShare({
+            url: sharePayload.url,
+            title: sharePayload.title,
+            text: sharePayload.text,
+            fileName: sharePayload.fileName,
+            mimeType: sharePayload.mimeType,
+            data: sharePayload.data,
+          });
           break;
         }
 
@@ -429,7 +546,7 @@ const WebViewScreen = () => {
 
     if (isDeviceWifi || (Platform.OS === 'ios' && !normalizedSSID && pendingIosDeviceConfigRef.current)) {
       sendToWeb({
-        action: "DEVICE_WIFI_CONNECTED",
+        action: 'DEVICE_WIFI_CONNECTED',
         currentWifi: {
           ssid: normalizedSSID || connectedSSID || "Unknown"
         },
@@ -447,13 +564,13 @@ const WebViewScreen = () => {
       }
     } else {
       sendToWeb({
-        action: "DEVICE_WIFI_CONNECTED",
+        action: 'DEVICE_WIFI_CONNECTED',
         currentWifi: {
-          ssid: "No wifi connected"
+          ssid: 'No wifi connected',
         },
         success: false,
-        error: 'Connection failed. Please try again...'
-      })
+        error: 'Connection failed. Please try again...',
+      });
     }
   };
   checkWifiConnectionRef.current = checkWifiConnection;
@@ -545,6 +662,7 @@ const WebViewScreen = () => {
     }
   };
 
+  // Get current connected wifi details
   const getCurrentWifiInfo = async () => {
     try {
       const ssid = await WifiManager.getCurrentWifiSSID();
@@ -573,15 +691,49 @@ const WebViewScreen = () => {
     }
   };
 
+  const getConnectedWifiDetails = async () => {
+    try {
+      // Now scan connected WiFi
+      const connectedSSID = await WifiManager.getCurrentWifiSSID();
+      if (connectedSSID) {
+        sendToWeb({
+          action: 'WIFI_CONNECT_RESULT',
+          success: true,
+          currentWifi: {
+            ssid: connectedSSID,
+          },
+        });
+      } else {
+        sendToWeb({
+          action: 'WIFI_CONNECT_RESULT',
+          currentWifi: {
+            ssid: 'No wifi connected',
+          },
+          success: false,
+          error: 'Connection failed. Please try again...',
+        });
+      }
+    } catch (e) {
+      sendToWeb({
+        action: 'WIFI_CONNECT_RESULT',
+        success: false,
+        error: 'Connection timeout. Please try again...',
+      });
+    }
+  };
+
   const getMobileDataStatus = async () => {
     try {
       const state = await NetInfo.fetch();
+      const isMobileDataEnabled =
+        await NativeModules.MobileDataModule.isMobileDataEnabled();
       return {
         isMobileDataEnabled: state.type === 'cellular' && state.isConnected,
         connectionType: state.type,
         isConnected: state.isConnected,
       };
     } catch (e) {
+      console.log('Error while getting modile sta status');
       return {
         isMobileDataEnabled: true,
         error: e.toString(),
@@ -613,27 +765,296 @@ const WebViewScreen = () => {
     try {
       const locationPermission = await checkLocationPermission();
       const mobileDataStatus = await getMobileDataStatus();
+      const isVpnOn = await checkVpn();
 
       sendToWeb({
         action: 'SYSTEM_STATUS',
         data: {
           locationPermission,
           mobileData: mobileDataStatus.isMobileDataEnabled,
+          isVpnOn,
         },
       });
       return {
         success: true,
         locationPermission,
-        mobileData: mobileDataStatus.isMobileDataEnabled
-      }
+        mobileData: mobileDataStatus.isMobileDataEnabled,
+        isVpnOn,
+      };
     } catch (e) {
       sendToWeb({
         action: 'SYSTEM_STATUS',
         error: e.toString(),
       });
       return {
-        success: false
+        success: false,
+      };
+    }
+  };
+
+  // Derive the ESP32 gateway IP from the device's own Wi-Fi IP.
+  // ESP32 SoftAP default subnet hands clients 192.168.4.x with gateway 192.168.4.1,
+  // so replacing the last octet with `1` matches the running hotspot reliably without
+  // hard-coding an IP. This avoids needing react-native-wifi-reborn's
+  // getGatewayIPAddress() which is not available in v4.13.6.
+  const resolveEsp32Gateway = async () => {
+    const localIP = await WifiManager.getIP();
+    if (!localIP) throw new Error('Could not read device IP');
+    const parts = localIP.split('.');
+    if (parts.length !== 4) throw new Error(`Unexpected IP format: ${localIP}`);
+    parts[3] = '1';
+    return parts.join('.');
+  };
+
+  // Strip a `data:<mime>;base64,` prefix if the web sent a full data URI,
+  // leaving only the raw base64 payload that blob-util expects.
+  const stripBase64Prefix = data => {
+    if (typeof data !== 'string') return '';
+    const marker = 'base64,';
+    const idx = data.indexOf(marker);
+    return idx !== -1 ? data.slice(idx + marker.length) : data;
+  };
+
+  // WRITE_EXTERNAL_STORAGE is only meaningful on Android <= 9 (API 28). On API 29+
+  // we publish through MediaStore, which needs no runtime permission.
+  const requestLegacyStoragePermission = async () => {
+    if (Platform.OS !== 'android' || Platform.Version > 28) return true;
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+        {
+          title: 'Storage Permission',
+          message: 'SmartEco needs storage access to save downloaded files.',
+          buttonPositive: 'OK',
+          buttonNegative: 'Cancel',
+        },
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (e) {
+      console.log('Storage permission error:', e);
+      return false;
+    }
+  };
+
+  // Handles DOWNLOAD_FILE messages: writes the base64 payload to disk and saves it
+  // to the public Downloads folder (Android) or the Save-to-Files sheet (iOS).
+  const handleDownloadFile = async ({ fileName, mimeType, data }) => {
+    const safeName = (fileName && String(fileName).trim()) || `download_${Date.now()}`;
+    const type = mimeType || 'application/octet-stream';
+    const base64 = stripBase64Prefix(data);
+
+    if (!base64) {
+      sendToWeb({
+        action: 'DOWNLOAD_FILE_RESULT',
+        success: false,
+        fileName: safeName,
+        error: 'No file data received.',
+      });
+      return;
+    }
+
+    try {
+      if (Platform.OS === 'android') {
+        const hasPermission = await requestLegacyStoragePermission();
+        if (!hasPermission) {
+          sendToWeb({
+            action: 'DOWNLOAD_FILE_RESULT',
+            success: false,
+            fileName: safeName,
+            error: 'Storage permission denied.',
+          });
+          Alert.alert(
+            'Permission Required',
+            'Storage permission is needed to save files. Open settings to grant it?',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            ],
+          );
+          return;
+        }
+
+        // Write to cache first, then publish into the public Downloads collection.
+        const tempPath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${safeName}`;
+        await ReactNativeBlobUtil.fs.writeFile(tempPath, base64, 'base64');
+
+        if (Platform.Version >= 29) {
+          // Scoped storage: MediaStore handles the public Downloads entry, no permission needed.
+          await ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
+            { name: safeName, parentFolder: '', mimeType: type },
+            'Download',
+            tempPath,
+          );
+        } else {
+          // Legacy: copy into the public Downloads dir and register with Download Manager.
+          const destPath = `${ReactNativeBlobUtil.fs.dirs.LegacyDownloadDir}/${safeName}`;
+          await ReactNativeBlobUtil.fs.cp(tempPath, destPath);
+          ReactNativeBlobUtil.android.addCompleteDownload({
+            title: safeName,
+            description: 'Download complete',
+            mime: type,
+            path: destPath,
+            showNotification: true,
+          });
+        }
+
+        ReactNativeBlobUtil.fs.unlink(tempPath).catch(() => {});
+
+        sendToWeb({
+          action: 'DOWNLOAD_FILE_RESULT',
+          success: true,
+          fileName: safeName,
+          message: `${safeName} saved to Downloads.`,
+        });
+      } else {
+        // iOS: write to the app's Documents dir, then open the Save-to-Files / share sheet.
+        const path = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/${safeName}`;
+        await ReactNativeBlobUtil.fs.writeFile(path, base64, 'base64');
+
+        try {
+          await Share.open({
+            url: `file://${path}`,
+            type,
+            filename: safeName,
+            saveToFiles: true,
+          });
+          sendToWeb({
+            action: 'DOWNLOAD_FILE_RESULT',
+            success: true,
+            fileName: safeName,
+            message: `${safeName} saved.`,
+          });
+        } catch (shareErr) {
+          // react-native-share throws when the user dismisses the sheet — treat as a cancel.
+          const msg = (shareErr && shareErr.message ? shareErr.message : '').toLowerCase();
+          const cancelled = msg.includes('cancel') || msg.includes('dismiss') || msg.includes('user did not share');
+          sendToWeb({
+            action: 'DOWNLOAD_FILE_RESULT',
+            success: false,
+            fileName: safeName,
+            error: cancelled ? 'Save cancelled.' : (shareErr?.message || 'Failed to save file.'),
+          });
+        }
       }
+    } catch (e) {
+      console.log('DOWNLOAD_FILE error:', e);
+      sendToWeb({
+        action: 'DOWNLOAD_FILE_RESULT',
+        success: false,
+        fileName: safeName,
+        error: e instanceof Error ? e.message : 'Failed to save file.',
+      });
+    }
+  };
+
+  // Handles PRINT_FILE messages: decodes the base64 payload and opens the native
+  // print dialog. Images are embedded in HTML so they scale to the page; other
+  // printable docs (e.g. PDF) are written to a temp file and printed directly.
+  const handlePrintFile = async ({ fileName, mimeType, data }) => {
+    const type = mimeType || 'application/octet-stream';
+    const base64 = stripBase64Prefix(data);
+
+    if (!base64) {
+      sendToWeb({
+        action: 'PRINT_FILE_RESULT',
+        success: false,
+        fileName,
+        error: 'No file data received.',
+      });
+      return;
+    }
+
+    let tempPath = null;
+    try {
+      if (type.startsWith('image/')) {
+        const html =
+          '<html><head><meta name="viewport" content="width=device-width, initial-scale=1">' +
+          '<style>@page{margin:0}html,body{height:100%;margin:0}' +
+          '.wrap{display:flex;align-items:center;justify-content:center;height:100%}' +
+          'img{max-width:100%;max-height:100%}</style></head>' +
+          `<body><div class="wrap"><img src="data:${type};base64,${base64}"/></div></body></html>`;
+        await RNPrint.print({ html });
+      } else {
+        const safeName = (fileName && String(fileName).trim()) || `print_${Date.now()}`;
+        tempPath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${safeName}`;
+        await ReactNativeBlobUtil.fs.writeFile(tempPath, base64, 'base64');
+        await RNPrint.print({ filePath: tempPath });
+      }
+
+      sendToWeb({ action: 'PRINT_FILE_RESULT', success: true, fileName });
+    } catch (e) {
+      console.log('PRINT_FILE error:', e);
+      const msg = (e && e.message ? e.message : '').toLowerCase();
+      const cancelled = msg.includes('cancel') || msg.includes('did not');
+      sendToWeb({
+        action: 'PRINT_FILE_RESULT',
+        success: false,
+        fileName,
+        error: cancelled
+          ? 'Print cancelled.'
+          : e instanceof Error
+          ? e.message
+          : 'Failed to print.',
+      });
+    } finally {
+      if (tempPath) ReactNativeBlobUtil.fs.unlink(tempPath).catch(() => {});
+    }
+  };
+
+  // Handles SHARE messages: opens the native share sheet. When `data` is present
+  // the base64 payload (e.g. the QR image) is written to a temp file and shared
+  // alongside any text/url; otherwise just the url/text is shared.
+  const handleShare = async ({ url, title, text, fileName, mimeType, data }) => {
+    const base64 = stripBase64Prefix(data);
+    let tempPath = null;
+
+    try {
+      const options = {};
+      if (title) options.title = title;
+
+      const message = [text, url].filter(Boolean).join('\n');
+      if (message) options.message = message;
+
+      if (base64) {
+        const type = mimeType || 'application/octet-stream';
+        const safeName = (fileName && String(fileName).trim()) || `share_${Date.now()}`;
+        tempPath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${safeName}`;
+        await ReactNativeBlobUtil.fs.writeFile(tempPath, base64, 'base64');
+        options.url = `file://${tempPath}`;
+        options.type = type;
+        options.filename = safeName;
+      } else if (url) {
+        options.url = url;
+      }
+
+      if (!options.url && !options.message) {
+        sendToWeb({
+          action: 'SHARE_RESULT',
+          success: false,
+          error: 'Nothing to share.',
+        });
+        return;
+      }
+
+      await Share.open(options);
+      sendToWeb({ action: 'SHARE_RESULT', success: true });
+    } catch (e) {
+      const msg = (e && e.message ? e.message : '').toLowerCase();
+      const cancelled =
+        msg.includes('cancel') ||
+        msg.includes('dismiss') ||
+        msg.includes('user did not share');
+      sendToWeb({
+        action: 'SHARE_RESULT',
+        success: false,
+        error: cancelled
+          ? 'Share cancelled.'
+          : e instanceof Error
+          ? e.message
+          : 'Failed to share.',
+      });
+    } finally {
+      if (tempPath) ReactNativeBlobUtil.fs.unlink(tempPath).catch(() => {});
     }
   };
 
@@ -710,107 +1131,6 @@ const WebViewScreen = () => {
       });
     }
   };
-
-  // const sendWifiCredentials = async (payload) => {
-  //   const MAX_ATTEMPTS = 3;
-  //   const REQUEST_TIMEOUT = 30000;
-  //   const RETRY_DELAY_MS = 10000;
- 
-  //   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  //   const endpoint = DEVICE_CONFIG_URL;
- 
-  //   const getStatusMessage = (status) => {
-  //     if (status === 200) return 'Device connected successfully';
-  //     if (status === 400) return 'Invalid request. Please check the WiFi credentials.';
-  //     if (status === 401) return 'Authentication failed. Please verify device credentials.';
-  //     if (status === 404) return 'Device endpoint not found. Please check the device URL.';
-  //     if (status === 500) return 'Device internal error. Please try again.';
-  //     if (status >= 400 && status < 500) return `Client error (${status}). Please check your request.`;
-  //     if (status >= 500) return `Server error (${status}). Device encountered an error.`;
-  //     return `Unexpected status code: ${status}`;
-  //   };
-
-  //   const isAcceptedDisconnect = errorMessage => (
-  //     errorMessage.includes('timed out') ||
-  //     errorMessage.includes('Load failed') ||
-  //     errorMessage.includes('Network request failed') ||
-  //     errorMessage.includes('network connection was lost') ||
-  //     errorMessage.includes('No network route') ||
-  //     errorMessage.includes('offline')
-  //   );
-
-  //   const sendResult = data => {
-  //     sendToWeb({
-  //       action: 'SEND_WIFI_CREDENTIALS_RESULT',
-  //       ...data,
-  //     });
-  //     sendToWeb({
-  //       action: 'DEVICE_CONFIG_RESULT',
-  //       ...data,
-  //     });
-  //   };
-
-  //   if (!payload?.ssid || !payload?.password) {
-  //     sendResult({
-  //       success: false,
-  //       message: 'Regular Wi-Fi SSID and password are required before sending settings to the device.',
-  //       error: 'Missing ssid or password',
-  //     });
-  //     return;
-  //   }
-
-  //   if (Platform.OS === 'ios') {
-  //     try {
-  //       logDeviceSetup('ios_native_send_wifi_credentials_start', {
-  //         endpoint,
-  //         ssid: payload.ssid,
-  //         deviceid: payload.deviceid,
-  //         hasPassword: Boolean(payload.password),
-  //         offsetsCount: Array.isArray(payload.offsets) ? payload.offsets.length : undefined,
-  //       });
-
-  //       if (!DeviceConfigModule?.send) {
-  //         throw new Error('DeviceConfigModule is not available');
-  //       }
-
-  //       const result = await DeviceConfigModule.send(endpoint, payload, DEVICE_CONFIG_TIMEOUT_MS);
-  //       const statusCode = Number(result?.status || 0);
-  //       const success = statusCode >= 200 && statusCode < 300;
-  //       logDeviceSetup('ios_native_send_wifi_credentials_result', {
-  //         status: statusCode,
-  //         success,
-  //       });
-
-  //       sendResult({
-  //         success,
-  //         status: statusCode,
-  //         response: result?.response,
-  //         message: success ? getStatusMessage(statusCode) : getStatusMessage(statusCode),
-  //         error: success ? undefined : `HTTP ${statusCode}`,
-  //       });
-  //     } catch (error) {
-  //       const errorMessage = error instanceof Error ? error.message : String(error);
-  //       logDeviceSetup('ios_native_send_wifi_credentials_error', { error: errorMessage });
-
-  //       if (isAcceptedDisconnect(errorMessage)) {
-  //         sendResult({
-  //           success: true,
-  //           status: 200,
-  //           message: 'Device accepted Wi-Fi config and closed the connection.',
-  //           nativeError: errorMessage,
-  //           acceptedAfterDisconnect: true,
-  //         });
-  //         return;
-  //       }
-
-  //       sendResult({
-  //         success: false,
-  //         message: errorMessage || 'Unable to send Wi-Fi credentials',
-  //         error: errorMessage || 'Unknown error',
-  //       });
-  //     }
-  //     return;
-  //   }
 
   const sendWifiCredentials = async (payload) => {
     ensureProvisionAttempt('sendWifiCredentials');
@@ -1269,7 +1589,12 @@ const WebViewScreen = () => {
   `;
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <View
+      style={[
+        styles.container,
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}
+    >
       <StatusBar
         barStyle="dark-content"
         backgroundColor="transparent"
@@ -1334,7 +1659,32 @@ const WebViewScreen = () => {
         // }}
         
       />
-      
+      {isLoading && !showSplash && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="small" color="#0F796B" />
+          <Text style={styles.loadingText}>Loading SmartEco...</Text>
+        </View>
+      )}
+      {showSplash && (
+        <Animated.View style={[styles.splashOverlay, { opacity: splashOpacity }]}>
+          <WebView
+            source={{ uri: splashUri }}
+            style={{ flex: 1 }}
+            javaScriptEnabled
+            domStorageEnabled
+            allowFileAccess
+            onMessage={handleSplashMessage}
+            originWhitelist={['*']}
+          />
+        </Animated.View>
+      )}
+      <UpdateModal
+        visible={modalVisible}
+        type={updateType}
+        data={updateData}
+        onDismiss={dismiss}
+        onSkipVersion={skipVersion}
+      />
     </View>
   );
 };
@@ -1346,6 +1696,27 @@ const styles = StyleSheet.create({
   },
   webview: {
     flex: 1,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#0F796B',
+    fontWeight: '500',
+  },
+  splashOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
+    backgroundColor: '#fff',
   },
 });
 

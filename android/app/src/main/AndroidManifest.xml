@@ -7,6 +7,10 @@
   <uses-permission android:name="android.permission.CAMERA" />
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
   <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+  <!-- Saving downloads to public storage on Android <= 9 (API 28). API 29+ uses MediaStore, no permission needed. -->
+  <uses-permission
+    android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+    android:maxSdkVersion="28" />
 
   <application
     android:name=".MainApplication"
