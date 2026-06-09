@@ -54,7 +54,7 @@ import UpdateModal from '../UpdateModal';
 
 const { VpnModule } = NativeModules;
 
-const ONBOARDING_BASE_URI = 'file:///android_asset/onboarding/index.html';
+const ONBOARDING_BASE_URI = 'onboarding/index.html';
 
 const WebViewScreen = ({ route }) => {
   const insets = useSafeAreaInsets();
@@ -89,9 +89,12 @@ const WebViewScreen = ({ route }) => {
   const lastVersionData = useRef(null);
 
   const splashOnly = route.params?.splashOnly ?? false;
-  const splashUri = splashOnly
-    ? `${ONBOARDING_BASE_URI}?splashOnly=true`
-    : ONBOARDING_BASE_URI;
+
+  // iOS: load from bundle folder reference so relative image paths resolve correctly
+  const splashSource = {
+    uri: splashOnly ? `${ONBOARDING_BASE_URI}?splashOnly=true` : ONBOARDING_BASE_URI,
+    baseUrl: 'onboarding/',
+  };
 
   // When the HTML splash sends ONBOARDING_DONE, fade it out
   const handleSplashMessage = useCallback(async (event) => {
@@ -1668,7 +1671,7 @@ const WebViewScreen = ({ route }) => {
       {showSplash && (
         <Animated.View style={[styles.splashOverlay, { opacity: splashOpacity }]}>
           <WebView
-            source={{ uri: splashUri }}
+            source={splashSource}
             style={{ flex: 1 }}
             javaScriptEnabled
             domStorageEnabled

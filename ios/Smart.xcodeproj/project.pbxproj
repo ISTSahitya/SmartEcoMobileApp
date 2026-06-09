@@ -17,6 +17,7 @@
 		16D06EB1848B4788A62E7C66 /* WifiConnectModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 13E2B497C2E14F369E7D1FDC /* WifiConnectModule.m */; };
 		E9182696134644A3A4EBC012 /* Colors.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0644FA44499D473B9488EB3B /* Colors.xcassets */; };
 		F36F2F00CE6E40D08CF3171B /* BootSplash.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 8C310B2B13A64D7A84AD3D26 /* BootSplash.storyboard */; };
+		A1B2C3D400000001E5F6A7B8 /* onboarding in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002E5F6A7B8 /* onboarding */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +37,7 @@
 		A8E62D2F2D0A0001006A70B1 /* DeviceConfigModule.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = DeviceConfigModule.m; path = Smart/DeviceConfigModule.m; sourceTree = "<group>"; };
 		13E2B497C2E14F369E7D1FDC /* WifiConnectModule.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = WifiConnectModule.m; path = Smart/WifiConnectModule.m; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		A1B2C3D400000002E5F6A7B8 /* onboarding */ = {isa = PBXFileReference; lastKnownFileType = folder; name = onboarding; path = Smart/onboarding; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,6 +66,7 @@
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
 				8C310B2B13A64D7A84AD3D26 /* BootSplash.storyboard */,
 				0644FA44499D473B9488EB3B /* Colors.xcassets */,
+				A1B2C3D400000002E5F6A7B8 /* onboarding */,
 			);
 			name = Smart;
 			sourceTree = "<group>";
@@ -189,6 +192,7 @@
 				F36F2F00CE6E40D08CF3171B /* BootSplash.storyboard in Resources */,
 				E9182696134644A3A4EBC012 /* Colors.xcassets in Resources */,
 				58A8FB2D647D1AC479A01F59 /* PrivacyInfo.xcprivacy in Resources */,
+				A1B2C3D400000001E5F6A7B8 /* onboarding in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
