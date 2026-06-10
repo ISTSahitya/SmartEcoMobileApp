@@ -23,6 +23,8 @@ import Share from 'react-native-share';
 import RNPrint from 'react-native-print';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
 import NetInfo from "@react-native-community/netinfo";
+import useVersionCheck from '../../hooks/useVersionCheck';
+import UpdateModal from '../UpdateModal';
 //import { check, request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 
 const DEVICE_CONFIG_URL = 'http://192.168.4.1/wifi';
@@ -30,6 +32,15 @@ const DEVICE_CONFIG_TIMEOUT_MS = 45000;
 const WEB_APP_URL = 'https://atlas.smartgeoapps.com/smartecodev/';
 // const WEB_APP_URL = 'https://app.smarteco.ai/smartecoiaq/';
 const { DeviceConfigModule, WifiConnectModule } = NativeModules;
+
+const injectedAutoZoomFix = `
+  (function () {
+    var style = document.createElement('style');
+    style.textContent = 'input, select, textarea { font-size: max(16px, 1em) !important; }';
+    document.head.appendChild(style);
+    true;
+  })();
+`;
 
 const logDeviceSetup = (step, details = {}) => {
   console.log('[DeviceSetup]', step, details);
@@ -49,12 +60,7 @@ const extractDeviceIdFromDeviceSsid = ssid => {
   const separatorIndex = normalizedSsid.indexOf('_');
   return separatorIndex >= 0 ? normalizedSsid.slice(separatorIndex + 1) : '';
 };
-import useVersionCheck from '../../hooks/useVersionCheck';
-import UpdateModal from '../UpdateModal';
-
-const { VpnModule } = NativeModules;
-
-const ONBOARDING_BASE_URI = 'onboarding/index.html';
+const ONBOARDING_BASE_URI = `file://${DeviceConfigModule?.bundlePath ?? ''}/onboarding/index.html`;
 
 const WebViewScreen = ({ route }) => {
   const insets = useSafeAreaInsets();
@@ -90,10 +96,8 @@ const WebViewScreen = ({ route }) => {
 
   const splashOnly = route.params?.splashOnly ?? false;
 
-  // iOS: load from bundle folder reference so relative image paths resolve correctly
   const splashSource = {
     uri: splashOnly ? `${ONBOARDING_BASE_URI}?splashOnly=true` : ONBOARDING_BASE_URI,
-    baseUrl: 'onboarding/',
   };
 
   // When the HTML splash sends ONBOARDING_DONE, fade it out
@@ -348,12 +352,8 @@ const WebViewScreen = ({ route }) => {
         case 'GET_SYSTEM_STATUS':
           const interval = setInterval(async () => {
             const systemStatus = await getSystemStatus();
-            if (
-              systemStatus.success &&
-              systemStatus.locationPermission &&
-              !systemStatus.mobileData &&
-              !systemStatus.isVpnOn
-            ) {
+            if (systemStatus.success && systemStatus.locationPermission && !systemStatus.mobileData)
+            {
               clearInterval(interval);
             }
           }, 3000);
@@ -361,8 +361,9 @@ const WebViewScreen = ({ route }) => {
 
         case 'CONNECT_WIFI':
           if (message.ssid) {
-            const { ssid, password } = message;
-            connectToWifi(ssid, password);
+            const { ssid, password, serialNumber} = message;
+
+            connectToWifi(ssid, password, serialNumber);
           } else {
             sendToWeb({
               action: 'WIFI_CONNECT_RESULT',
@@ -462,28 +463,46 @@ const WebViewScreen = ({ route }) => {
           sendWifiCredentials(message.payload || message);
           break;
 
+        case 'DOWNLOAD_FILE': {
+          const filePayload = message.payload || message;
+          handleDownloadFile({
+            fileName: filePayload.fileName,
+            mimeType: filePayload.mimeType,
+            data: filePayload.data,
+          });
+          break;
+        }
+
+        case 'PRINT_FILE': {
+          const printPayload = message.payload || message;
+          handlePrintFile({
+            fileName: printPayload.fileName,
+            mimeType: printPayload.mimeType,
+            data: printPayload.data,
+          });
+          break;
+        }
+
+        case 'SHARE': {
+          const sharePayload = message.payload || message;
+          handleShare({
+            url: sharePayload.url,
+            title: sharePayload.title,
+            text: sharePayload.text,
+            fileName: sharePayload.fileName,
+            mimeType: sharePayload.mimeType,
+            data: sharePayload.data,
+          });
+          break;
+        }
+
         case 'WEB_NETWORK_LOG':
           logProvisionStep('web_network_log', message.data || {});
           break;
 
         case 'RELEASE_WIFI_BINDING': {
           const { ssid, password } = message;
-          logProvisionStep('release_wifi_binding_received', { platform: Platform.OS, ssid });
-          const releaseBinding = async () => {
-            if (Platform.OS === 'ios' && WifiConnectModule?.connectToNetwork && ssid && password) {
-              try {
-                logProvisionStep('ios_reconnecting_to_home_wifi', { ssid });
-                await WifiConnectModule.connectToNetwork(ssid, password);
-                logProvisionStep('ios_reconnected_to_home_wifi', { ssid });
-              } catch (e) {
-                // iOS will auto-reconnect via preferred networks after the joinOnce session ends
-                logProvisionStep('ios_reconnect_to_home_wifi_failed', { error: e?.toString?.() });
-              }
-            }
-            sendToWeb({ action: 'WIFI_BINDING_RELEASED' });
-          };
-          releaseBinding();
-          sendWifiCredentials(message.payload);
+          releaseWifiBinding({ ssid, password, payload: message.payload });
           break;
         }
 
@@ -728,19 +747,11 @@ const WebViewScreen = ({ route }) => {
   const getMobileDataStatus = async () => {
     try {
       const state = await NetInfo.fetch();
-      const isMobileDataEnabled =
-        await NativeModules.MobileDataModule.isMobileDataEnabled();
-      return {
-        isMobileDataEnabled: state.type === 'cellular' && state.isConnected,
-        connectionType: state.type,
-        isConnected: state.isConnected,
-      };
+      const isMobileDataEnabled = state.type === 'cellular' && state.isConnected === true;
+      return { isMobileDataEnabled };
     } catch (e) {
-      console.log('Error while getting modile sta status');
-      return {
-        isMobileDataEnabled: true,
-        error: e.toString(),
-      };
+      console.log('Error while getting mobile data status');
+      return { isMobileDataEnabled: false, error: e.toString() };
     }
   };
 
@@ -768,21 +779,18 @@ const WebViewScreen = ({ route }) => {
     try {
       const locationPermission = await checkLocationPermission();
       const mobileDataStatus = await getMobileDataStatus();
-      const isVpnOn = await checkVpn();
 
       sendToWeb({
         action: 'SYSTEM_STATUS',
         data: {
           locationPermission,
           mobileData: mobileDataStatus.isMobileDataEnabled,
-          isVpnOn,
         },
       });
       return {
         success: true,
         locationPermission,
         mobileData: mobileDataStatus.isMobileDataEnabled,
-        isVpnOn,
       };
     } catch (e) {
       sendToWeb({
@@ -790,278 +798,12 @@ const WebViewScreen = ({ route }) => {
         error: e.toString(),
       });
       return {
-        success: false,
-      };
-    }
-  };
-
-  // Derive the ESP32 gateway IP from the device's own Wi-Fi IP.
-  // ESP32 SoftAP default subnet hands clients 192.168.4.x with gateway 192.168.4.1,
-  // so replacing the last octet with `1` matches the running hotspot reliably without
-  // hard-coding an IP. This avoids needing react-native-wifi-reborn's
-  // getGatewayIPAddress() which is not available in v4.13.6.
-  const resolveEsp32Gateway = async () => {
-    const localIP = await WifiManager.getIP();
-    if (!localIP) throw new Error('Could not read device IP');
-    const parts = localIP.split('.');
-    if (parts.length !== 4) throw new Error(`Unexpected IP format: ${localIP}`);
-    parts[3] = '1';
-    return parts.join('.');
-  };
-
-  // Strip a `data:<mime>;base64,` prefix if the web sent a full data URI,
-  // leaving only the raw base64 payload that blob-util expects.
-  const stripBase64Prefix = data => {
-    if (typeof data !== 'string') return '';
-    const marker = 'base64,';
-    const idx = data.indexOf(marker);
-    return idx !== -1 ? data.slice(idx + marker.length) : data;
-  };
-
-  // WRITE_EXTERNAL_STORAGE is only meaningful on Android <= 9 (API 28). On API 29+
-  // we publish through MediaStore, which needs no runtime permission.
-  const requestLegacyStoragePermission = async () => {
-    if (Platform.OS !== 'android' || Platform.Version > 28) return true;
-    try {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-        {
-          title: 'Storage Permission',
-          message: 'SmartEco needs storage access to save downloaded files.',
-          buttonPositive: 'OK',
-          buttonNegative: 'Cancel',
-        },
-      );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
-    } catch (e) {
-      console.log('Storage permission error:', e);
-      return false;
-    }
-  };
-
-  // Handles DOWNLOAD_FILE messages: writes the base64 payload to disk and saves it
-  // to the public Downloads folder (Android) or the Save-to-Files sheet (iOS).
-  const handleDownloadFile = async ({ fileName, mimeType, data }) => {
-    const safeName = (fileName && String(fileName).trim()) || `download_${Date.now()}`;
-    const type = mimeType || 'application/octet-stream';
-    const base64 = stripBase64Prefix(data);
-
-    if (!base64) {
-      sendToWeb({
-        action: 'DOWNLOAD_FILE_RESULT',
-        success: false,
-        fileName: safeName,
-        error: 'No file data received.',
-      });
-      return;
-    }
-
-    try {
-      if (Platform.OS === 'android') {
-        const hasPermission = await requestLegacyStoragePermission();
-        if (!hasPermission) {
-          sendToWeb({
-            action: 'DOWNLOAD_FILE_RESULT',
-            success: false,
-            fileName: safeName,
-            error: 'Storage permission denied.',
-          });
-          Alert.alert(
-            'Permission Required',
-            'Storage permission is needed to save files. Open settings to grant it?',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => Linking.openSettings() },
-            ],
-          );
-          return;
-        }
-
-        // Write to cache first, then publish into the public Downloads collection.
-        const tempPath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${safeName}`;
-        await ReactNativeBlobUtil.fs.writeFile(tempPath, base64, 'base64');
-
-        if (Platform.Version >= 29) {
-          // Scoped storage: MediaStore handles the public Downloads entry, no permission needed.
-          await ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
-            { name: safeName, parentFolder: '', mimeType: type },
-            'Download',
-            tempPath,
-          );
-        } else {
-          // Legacy: copy into the public Downloads dir and register with Download Manager.
-          const destPath = `${ReactNativeBlobUtil.fs.dirs.LegacyDownloadDir}/${safeName}`;
-          await ReactNativeBlobUtil.fs.cp(tempPath, destPath);
-          ReactNativeBlobUtil.android.addCompleteDownload({
-            title: safeName,
-            description: 'Download complete',
-            mime: type,
-            path: destPath,
-            showNotification: true,
-          });
-        }
-
-        ReactNativeBlobUtil.fs.unlink(tempPath).catch(() => {});
-
-        sendToWeb({
-          action: 'DOWNLOAD_FILE_RESULT',
-          success: true,
-          fileName: safeName,
-          message: `${safeName} saved to Downloads.`,
-        });
-      } else {
-        // iOS: write to the app's Documents dir, then open the Save-to-Files / share sheet.
-        const path = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/${safeName}`;
-        await ReactNativeBlobUtil.fs.writeFile(path, base64, 'base64');
-
-        try {
-          await Share.open({
-            url: `file://${path}`,
-            type,
-            filename: safeName,
-            saveToFiles: true,
-          });
-          sendToWeb({
-            action: 'DOWNLOAD_FILE_RESULT',
-            success: true,
-            fileName: safeName,
-            message: `${safeName} saved.`,
-          });
-        } catch (shareErr) {
-          // react-native-share throws when the user dismisses the sheet — treat as a cancel.
-          const msg = (shareErr && shareErr.message ? shareErr.message : '').toLowerCase();
-          const cancelled = msg.includes('cancel') || msg.includes('dismiss') || msg.includes('user did not share');
-          sendToWeb({
-            action: 'DOWNLOAD_FILE_RESULT',
-            success: false,
-            fileName: safeName,
-            error: cancelled ? 'Save cancelled.' : (shareErr?.message || 'Failed to save file.'),
-          });
-        }
+        success: false
       }
-    } catch (e) {
-      console.log('DOWNLOAD_FILE error:', e);
-      sendToWeb({
-        action: 'DOWNLOAD_FILE_RESULT',
-        success: false,
-        fileName: safeName,
-        error: e instanceof Error ? e.message : 'Failed to save file.',
-      });
     }
   };
 
-  // Handles PRINT_FILE messages: decodes the base64 payload and opens the native
-  // print dialog. Images are embedded in HTML so they scale to the page; other
-  // printable docs (e.g. PDF) are written to a temp file and printed directly.
-  const handlePrintFile = async ({ fileName, mimeType, data }) => {
-    const type = mimeType || 'application/octet-stream';
-    const base64 = stripBase64Prefix(data);
-
-    if (!base64) {
-      sendToWeb({
-        action: 'PRINT_FILE_RESULT',
-        success: false,
-        fileName,
-        error: 'No file data received.',
-      });
-      return;
-    }
-
-    let tempPath = null;
-    try {
-      if (type.startsWith('image/')) {
-        const html =
-          '<html><head><meta name="viewport" content="width=device-width, initial-scale=1">' +
-          '<style>@page{margin:0}html,body{height:100%;margin:0}' +
-          '.wrap{display:flex;align-items:center;justify-content:center;height:100%}' +
-          'img{max-width:100%;max-height:100%}</style></head>' +
-          `<body><div class="wrap"><img src="data:${type};base64,${base64}"/></div></body></html>`;
-        await RNPrint.print({ html });
-      } else {
-        const safeName = (fileName && String(fileName).trim()) || `print_${Date.now()}`;
-        tempPath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${safeName}`;
-        await ReactNativeBlobUtil.fs.writeFile(tempPath, base64, 'base64');
-        await RNPrint.print({ filePath: tempPath });
-      }
-
-      sendToWeb({ action: 'PRINT_FILE_RESULT', success: true, fileName });
-    } catch (e) {
-      console.log('PRINT_FILE error:', e);
-      const msg = (e && e.message ? e.message : '').toLowerCase();
-      const cancelled = msg.includes('cancel') || msg.includes('did not');
-      sendToWeb({
-        action: 'PRINT_FILE_RESULT',
-        success: false,
-        fileName,
-        error: cancelled
-          ? 'Print cancelled.'
-          : e instanceof Error
-          ? e.message
-          : 'Failed to print.',
-      });
-    } finally {
-      if (tempPath) ReactNativeBlobUtil.fs.unlink(tempPath).catch(() => {});
-    }
-  };
-
-  // Handles SHARE messages: opens the native share sheet. When `data` is present
-  // the base64 payload (e.g. the QR image) is written to a temp file and shared
-  // alongside any text/url; otherwise just the url/text is shared.
-  const handleShare = async ({ url, title, text, fileName, mimeType, data }) => {
-    const base64 = stripBase64Prefix(data);
-    let tempPath = null;
-
-    try {
-      const options = {};
-      if (title) options.title = title;
-
-      const message = [text, url].filter(Boolean).join('\n');
-      if (message) options.message = message;
-
-      if (base64) {
-        const type = mimeType || 'application/octet-stream';
-        const safeName = (fileName && String(fileName).trim()) || `share_${Date.now()}`;
-        tempPath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${safeName}`;
-        await ReactNativeBlobUtil.fs.writeFile(tempPath, base64, 'base64');
-        options.url = `file://${tempPath}`;
-        options.type = type;
-        options.filename = safeName;
-      } else if (url) {
-        options.url = url;
-      }
-
-      if (!options.url && !options.message) {
-        sendToWeb({
-          action: 'SHARE_RESULT',
-          success: false,
-          error: 'Nothing to share.',
-        });
-        return;
-      }
-
-      await Share.open(options);
-      sendToWeb({ action: 'SHARE_RESULT', success: true });
-    } catch (e) {
-      const msg = (e && e.message ? e.message : '').toLowerCase();
-      const cancelled =
-        msg.includes('cancel') ||
-        msg.includes('dismiss') ||
-        msg.includes('user did not share');
-      sendToWeb({
-        action: 'SHARE_RESULT',
-        success: false,
-        error: cancelled
-          ? 'Share cancelled.'
-          : e instanceof Error
-          ? e.message
-          : 'Failed to share.',
-      });
-    } finally {
-      if (tempPath) ReactNativeBlobUtil.fs.unlink(tempPath).catch(() => {});
-    }
-  };
-
-  const connectToWifi = async (ssid, password) => {
+  const connectToWifi = async (ssid, password, serialNumber) => {
     try {
       if (Platform.OS === 'ios') {
         if (!WifiConnectModule?.connectToNetwork) {
@@ -1072,38 +814,64 @@ const WebViewScreen = ({ route }) => {
           });
           return;
         }
-        // NEHotspotConfiguration with joinOnce=YES: temporarily joins the network
-        // for this session only — not saved to device WiFi settings.
-        // iOS will show a system confirmation dialog to the user.
-        await WifiConnectModule.connectToNetwork(ssid, password);
 
-        // iOS wifi switching can take longer than a single check allows.
-        // Poll the current SSID until it matches the target or we time out.
-        const MAX_CHECKS = 6;
-        const CHECK_INTERVAL_MS = 1500;
-        let checkCount = 0;
-        const pollForConnection = async () => {
-          checkCount++;
-          const connectedSSID = (await getCurrentWifiInfo()).ssid;
-          const success = normalizeSsid(connectedSSID).toLowerCase() === normalizeSsid(ssid).toLowerCase();
-          logProvisionStep('ios_wifi_connect_poll', {
-            checkCount,
-            connectedSSID,
-            targetSsid: ssid,
-            success,
-          });
-          if (success || checkCount >= MAX_CHECKS) {
-            sendToWeb({
-              action: 'WIFI_CONNECT_RESULT',
-              success,
-              currentWifi: { ssid: connectedSSID },
-              message: success ? `Connected to ${ssid}` : 'Connection failed or timed out',
-            });
-          } else {
-            setTimeout(pollForConnection, CHECK_INTERVAL_MS);
+        const attemptIosConnection = targetSsid => new Promise(async (resolve, reject) => {
+          try {
+            // NEHotspotConfiguration with joinOnce=YES: temporarily joins the network
+            // for this session only — not saved to device WiFi settings.
+            // iOS will show a system confirmation dialog to the user.
+            await WifiConnectModule.connectToNetwork(targetSsid, password);
+          } catch (e) {
+            reject(e);
+            return;
           }
-        };
-        setTimeout(pollForConnection, 2000);
+
+          // iOS wifi switching can take longer than a single check allows.
+          // Poll the current SSID until it matches the target or we time out.
+          const MAX_CHECKS = 6;
+          const CHECK_INTERVAL_MS = 1500;
+          let checkCount = 0;
+          const pollForConnection = async () => {
+            checkCount++;
+            const connectedSSID = (await getCurrentWifiInfo()).ssid;
+            const success = normalizeSsid(connectedSSID).toLowerCase() === normalizeSsid(targetSsid).toLowerCase();
+            logProvisionStep('ios_wifi_connect_poll', {
+              checkCount,
+              connectedSSID,
+              targetSsid,
+              success,
+            });
+            if (success || checkCount >= MAX_CHECKS) {
+              resolve({ success, connectedSSID });
+            } else {
+              setTimeout(pollForConnection, CHECK_INTERVAL_MS);
+            }
+          };
+          setTimeout(pollForConnection, 2000);
+        });
+
+        // The device sometimes broadcasts a bare "IAQ_" network instead of
+        // "IAQ_{serialNumber}". Only fall back to the serial-suffixed name when
+        // the requested ssid is that bare prefix — an already-suffixed ssid
+        // like "IAQ_SEihsx" should just connect as given.
+        const isBareIaqSsid = normalizeSsid(ssid).toLowerCase() === 'iaq_';
+        const fallbackSsid = isBareIaqSsid && serialNumber ? `IAQ_${serialNumber}` : null;
+
+        let { success, connectedSSID } = await attemptIosConnection(ssid);
+        console.log(fallbackSsid, "Fallback SSID");
+        
+
+        if (!success && fallbackSsid) {
+          logProvisionStep('ios_wifi_connect_fallback_attempt', { originalSsid: ssid, fallbackSsid });
+          ({ success, connectedSSID } = await attemptIosConnection(fallbackSsid));
+        }
+
+        sendToWeb({
+          action: 'WIFI_CONNECT_RESULT',
+          success,
+          currentWifi: { ssid: success ? connectedSSID : ssid },
+          message: success ? `Connected to ${connectedSSID}` : 'Connection failed or timed out',
+        });
       } else {
         const locationReady = await checkAndAskLocation();
         if (!locationReady) {
@@ -1135,6 +903,47 @@ const WebViewScreen = ({ route }) => {
     }
   };
 
+  const releaseWifiBinding = async ({ ssid, password, payload } = {}) => {
+    logProvisionStep('release_wifi_binding_received', { ssid });
+
+    if (WifiConnectModule?.connectToHomeNetwork && ssid && password) {
+      try {
+        logProvisionStep('ios_reconnecting_to_home_wifi', { ssid });
+        await WifiConnectModule.connectToHomeNetwork(ssid, password);
+
+        // NEHotspotConfiguration fires the callback before the wifi switch
+        // completes — poll for up to 10s to confirm actual connection.
+        let connected = false;
+        for (let i = 0; i < 5; i++) {
+          await new Promise(r => setTimeout(r, 2000));
+          const currentSsid = await WifiManager.getCurrentWifiSSID().catch(() => null);
+          if (currentSsid && currentSsid === ssid) {
+            connected = true;
+            break;
+          }
+        }
+        logProvisionStep('ios_reconnected_to_home_wifi', { ssid, verified: connected });
+      } catch (e) {
+        logProvisionStep('ios_reconnect_to_home_wifi_failed', { error: e?.toString?.() });
+      }
+    } else {
+      // No home wifi credentials — remove the device hotspot config so iOS
+      // disconnects from the device network immediately.
+      try {
+        const currentSsid = await WifiManager.getCurrentWifiSSID();
+        if (currentSsid) {
+          await WifiConnectModule.disconnectFromNetwork(currentSsid);
+          logProvisionStep('ios_disconnected_device_wifi', { ssid: currentSsid });
+        }
+      } catch (e) {
+        logProvisionStep('ios_disconnect_device_wifi_failed', { error: e?.toString?.() });
+      }
+    }
+
+    sendToWeb({ action: 'WIFI_BINDING_RELEASED' });
+
+  };
+
   const sendWifiCredentials = async (payload) => {
     ensureProvisionAttempt('sendWifiCredentials');
     const MAX_ATTEMPTS = 3;
@@ -1154,15 +963,6 @@ const WebViewScreen = ({ route }) => {
       if (status >= 500) return `Server error (${status}). Device encountered an error.`;
       return `Unexpected status code: ${status}`;
     };
-
-    const isAcceptedDisconnect = (errorMessage = '') => (
-      errorMessage.includes('timed out') ||
-      errorMessage.includes('Load failed') ||
-      errorMessage.includes('Network request failed') ||
-      errorMessage.includes('network connection was lost') ||
-      errorMessage.includes('No network route') ||
-      errorMessage.includes('offline')
-    );
 
     const sendResult = data => {
       sendToWeb({
@@ -1210,7 +1010,6 @@ const WebViewScreen = ({ route }) => {
     }
 
     if (Platform.OS === 'ios') {
-      try {
         const connectedDeviceSsid = (await getCurrentWifiInfo()).ssid;
         const connectedDeviceId = extractDeviceIdFromDeviceSsid(connectedDeviceSsid);
         const scannerDeviceId = devicePayload.deviceid || '';
@@ -1237,54 +1036,79 @@ const WebViewScreen = ({ route }) => {
         logPayloadSnapshot('ios_native_send_wifi_credentials_payload', devicePayload);
 
         if (!DeviceConfigModule?.send) {
-          throw new Error('DeviceConfigModule is not available');
-        }
-
-        const result = await DeviceConfigModule.send(endpoint, devicePayload, DEVICE_CONFIG_TIMEOUT_MS);
-        const statusCode = Number(result?.status || 0);
-        const success = statusCode >= 200 && statusCode < 300;
-        logProvisionStep('ios_native_send_wifi_credentials_result', {
-          status: statusCode,
-          success,
-          responseLength: result?.response?.length || 0,
-          response: result?.response || '',
-          requestBody: result?.requestBody,
-        });
-
-        sendResult({
-          success,
-          status: statusCode,
-          response: result?.response,
-          requestPayload: devicePayload,
-          requestBody: result?.requestBody || JSON.stringify(devicePayload),
-          message: getStatusMessage(statusCode),
-          error: success ? undefined : `HTTP ${statusCode}`,
-        });
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        logProvisionStep('ios_native_send_wifi_credentials_error', { error: errorMessage });
-
-        if (isAcceptedDisconnect(errorMessage)) {
-          sendResult({
-            success: true,
-            status: 200,
-            message: 'Device accepted Wi-Fi details and closed the setup connection.',
-            nativeError: errorMessage,
-            acceptedAfterDisconnect: true,
-            requestPayload: devicePayload,
-            requestBody: JSON.stringify(devicePayload),
-          });
+          sendResult({ success: false, error: 'DeviceConfigModule is not available' });
           return;
         }
 
-        sendResult({
-          success: false,
-          message: errorMessage || 'Unable to send Wi-Fi details',
-          error: errorMessage || 'Unknown error',
-          requestPayload: devicePayload,
-          requestBody: JSON.stringify(devicePayload),
-        });
-      }
+        try {
+          const result = await DeviceConfigModule.send(endpoint, devicePayload, DEVICE_CONFIG_TIMEOUT_MS);
+          
+          const statusCode = Number(result?.status || 0);
+
+          let responseBody;
+          try {
+            responseBody = JSON.parse(result?.response || '');
+            console.log(responseBody, "Response from device wifi");
+          } catch (parseError) {
+            responseBody = undefined;
+          }
+
+          // The device API always responds with HTTP 200, even when it couldn't
+          // reach the internet. Compare strictly against false so a missing field
+          // (older firmware) doesn't get mistaken for a failure.
+          const internetUnavailable = responseBody?.internetAvailable === false;
+          const success = statusCode >= 200 && statusCode < 300 && !internetUnavailable;
+
+          if (!success) {
+            await releaseWifiBinding();
+          }
+
+          logProvisionStep('ios_native_send_wifi_credentials_result', {
+            status: statusCode,
+            success,
+            internetAvailable: responseBody?.internetAvailable,
+            responseLength: result?.response?.length || 0,
+            response: result?.response || '',
+            requestBody: result?.requestBody,
+          });
+
+          sendResult({
+            success,
+            status: statusCode,
+            response: result?.response,
+            requestPayload: devicePayload,
+            requestBody: result?.requestBody || JSON.stringify(devicePayload),
+            message: internetUnavailable
+              ? 'Internet is not available. Please check the WiFi details and try again.'
+              : getStatusMessage(statusCode),
+            error: success ? undefined : (internetUnavailable ? 'Internet not available' : `HTTP ${statusCode}`),
+          });
+        } catch (e) {
+          const errMsg = e?.message?.toLowerCase() || '';
+          // -1005 means the device dropped the connection after accepting credentials —
+          // this is the expected iOS success path (device resets to join home wifi).
+          const deviceAccepted = errMsg.includes('network connection was lost') ||
+                                 errMsg.includes('connection was lost');
+          logProvisionStep('ios_native_send_wifi_credentials_error', {
+            error: e?.toString?.(),
+            deviceAccepted,
+          });
+          if (deviceAccepted) {
+            sendResult({
+              success: true,
+              status: 200,
+              message: 'Device accepted Wi-Fi details',
+              requestBody: JSON.stringify(devicePayload),
+            });
+          } else {
+            await releaseWifiBinding();
+            sendResult({
+              success: false,
+              error: e?.message || e?.toString?.() || 'Unknown error',
+              message: 'Failed to send Wi-Fi credentials to the device.',
+            });
+          }
+        }
       return;
     }
 
@@ -1400,6 +1224,150 @@ const WebViewScreen = ({ route }) => {
       }
     }
   };
+
+  const stripBase64Prefix = data => {
+    if (typeof data !== 'string') return '';
+    const marker = 'base64,';
+    const idx = data.indexOf(marker);
+    return idx !== -1 ? data.slice(idx + marker.length) : data;
+  };
+
+  // Writes the base64 payload to DocumentDir and opens a system document
+  // preview so the user can "Save to Files" or share it onward. iOS only —
+  // Android is handled in the separate android branch.
+  const handleDownloadFile = async ({ fileName, data }) => {
+    if (Platform.OS !== 'ios') return;
+
+    const safeName = (fileName && String(fileName).trim()) || `download_${Date.now()}`;
+    const base64 = stripBase64Prefix(data);
+
+    if (!base64) {
+      sendToWeb({
+        action: 'DOWNLOAD_FILE_RESULT',
+        success: false,
+        fileName: safeName,
+        error: 'No file data received.',
+      });
+      return;
+    }
+
+    try {
+      const tempPath = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/${safeName}`;
+      await ReactNativeBlobUtil.fs.writeFile(tempPath, base64, 'base64');
+      await ReactNativeBlobUtil.ios.previewDocument(tempPath);
+      sendToWeb({
+        action: 'DOWNLOAD_FILE_RESULT',
+        success: true,
+        fileName: safeName,
+        message: `${safeName} is ready to save.`,
+      });
+    } catch (e) {
+      console.log('DOWNLOAD_FILE error:', e);
+      sendToWeb({
+        action: 'DOWNLOAD_FILE_RESULT',
+        success: false,
+        fileName: safeName,
+        error: e instanceof Error ? e.message : 'Failed to save file.',
+      });
+    }
+  };
+
+  const handlePrintFile = async ({ fileName, mimeType, data }) => {
+    if (Platform.OS !== 'ios') return;
+
+    const type = mimeType || 'application/octet-stream';
+    const base64 = stripBase64Prefix(data);
+
+    if (!base64) {
+      sendToWeb({
+        action: 'PRINT_FILE_RESULT',
+        success: false,
+        fileName,
+        error: 'No file data received.',
+      });
+      return;
+    }
+
+    let tempPath = null;
+    try {
+      if (type.startsWith('image/')) {
+        const html =
+          '<html><head><meta name="viewport" content="width=device-width, initial-scale=1">' +
+          '<style>@page{margin:0}html,body{height:100%;margin:0}' +
+          '.wrap{display:flex;align-items:center;justify-content:center;height:100%}' +
+          'img{max-width:100%;max-height:100%}</style></head>' +
+          `<body><div class="wrap"><img src="data:${type};base64,${base64}"/></div></body></html>`;
+        await RNPrint.print({ html });
+      } else {
+        const safeName = (fileName && String(fileName).trim()) || `print_${Date.now()}`;
+        tempPath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${safeName}`;
+        await ReactNativeBlobUtil.fs.writeFile(tempPath, base64, 'base64');
+        await RNPrint.print({ filePath: tempPath });
+      }
+      sendToWeb({ action: 'PRINT_FILE_RESULT', success: true, fileName });
+    } catch (e) {
+      console.log('PRINT_FILE error:', e);
+      const msg = (e && e.message ? e.message : '').toLowerCase();
+      const cancelled = msg.includes('cancel') || msg.includes('did not');
+      sendToWeb({
+        action: 'PRINT_FILE_RESULT',
+        success: false,
+        fileName,
+        error: cancelled ? 'Print cancelled.' : e instanceof Error ? e.message : 'Failed to print.',
+      });
+    } finally {
+      if (tempPath) ReactNativeBlobUtil.fs.unlink(tempPath).catch(() => {});
+    }
+  };
+
+  // Opens the native share sheet. When `data` is present the base64 payload
+  // is written to a temp file and shared; otherwise just the url/text is shared.
+  // Works on both iOS and Android via react-native-share.
+  const handleShare = async ({ url, title, text, fileName, mimeType, data }) => {
+    if (Platform.OS !== 'ios') return;
+
+    const base64 = stripBase64Prefix(data);
+    let tempPath = null;
+
+    try {
+      const options = {};
+      if (title) options.title = title;
+
+      const shareMessage = [text, url].filter(Boolean).join('\n');
+      if (shareMessage) options.message = shareMessage;
+
+      if (base64) {
+        const type = mimeType || 'application/octet-stream';
+        const safeName = (fileName && String(fileName).trim()) || `share_${Date.now()}`;
+        tempPath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${safeName}`;
+        await ReactNativeBlobUtil.fs.writeFile(tempPath, base64, 'base64');
+        options.url = `file://${tempPath}`;
+        options.type = type;
+        options.filename = safeName;
+      } else if (url) {
+        options.url = url;
+      }
+
+      if (!options.url && !options.message) {
+        sendToWeb({ action: 'SHARE_RESULT', success: false, error: 'Nothing to share.' });
+        return;
+      }
+
+      await Share.open(options);
+      sendToWeb({ action: 'SHARE_RESULT', success: true });
+    } catch (e) {
+      const msg = (e && e.message ? e.message : '').toLowerCase();
+      const cancelled = msg.includes('cancel') || msg.includes('dismiss') || msg.includes('user did not share');
+      sendToWeb({
+        action: 'SHARE_RESULT',
+        success: false,
+        error: cancelled ? 'Share cancelled.' : e instanceof Error ? e.message : 'Failed to share.',
+      });
+    } finally {
+      if (tempPath) ReactNativeBlobUtil.fs.unlink(tempPath).catch(() => {});
+    }
+  };
+
   const injectedDeviceConfigBridge = `
     (function () {
       if (window.__smartEcoDeviceConfigBridgeInstalled) {
@@ -1592,12 +1560,7 @@ const WebViewScreen = ({ route }) => {
   `;
 
   return (
-    <View
-      style={[
-        styles.container,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
-      ]}
-    >
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar
         barStyle="dark-content"
         backgroundColor="transparent"
@@ -1608,10 +1571,13 @@ const WebViewScreen = ({ route }) => {
         mixedContentMode="always"
         onMessage={onWebMessage}
         injectedJavaScriptBeforeContentLoaded={injectedDeviceConfigBridge}
+        injectedJavaScript={injectedAutoZoomFix}
         source={{ uri: WEB_APP_URL }}
         style={styles.webview}
-        contentInsetAdjustmentBehavior="automatic"
+        bounces={false}
+        contentInsetAdjustmentBehavior="never"
         onLoadEnd={() => {
+          setIsLoading(false);
           if (pendingOAuthMessageRef.current) {
             const oauthMessage = pendingOAuthMessageRef.current;
             const message = JSON.stringify(oauthMessage);
@@ -1662,7 +1628,7 @@ const WebViewScreen = ({ route }) => {
         // }}
         
       />
-      {isLoading && !showSplash && (
+      {isLoading && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="small" color="#0F796B" />
           <Text style={styles.loadingText}>Loading SmartEco...</Text>
@@ -1676,6 +1642,7 @@ const WebViewScreen = ({ route }) => {
             javaScriptEnabled
             domStorageEnabled
             allowFileAccess
+            allowingReadAccessToURL={`file://${DeviceConfigModule?.bundlePath ?? ''}/onboarding/`}
             onMessage={handleSplashMessage}
             originWhitelist={['*']}
           />

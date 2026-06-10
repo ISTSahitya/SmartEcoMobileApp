@@ -9,7 +9,12 @@ RCT_EXPORT_MODULE();
 
 + (BOOL)requiresMainQueueSetup
 {
-  return NO;
+  return YES;
+}
+
+- (NSDictionary *)constantsToExport
+{
+  return @{ @"bundlePath": [NSBundle mainBundle].bundlePath ?: @"" };
 }
 
 RCT_EXPORT_METHOD(send:(NSString *)urlString
@@ -50,6 +55,7 @@ RCT_EXPORT_METHOD(send:(NSString *)urlString
   NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration ephemeralSessionConfiguration];
   configuration.timeoutIntervalForRequest = timeout.doubleValue / 1000.0;
   configuration.timeoutIntervalForResource = timeout.doubleValue / 1000.0;
+  configuration.allowsCellularAccess = NO;
   NSURLSession *session = [NSURLSession sessionWithConfiguration:configuration];
 
   NSURLSessionDataTask *task = [session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
