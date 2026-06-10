@@ -29,7 +29,7 @@ import UpdateModal from '../UpdateModal';
 
 const DEVICE_CONFIG_URL = 'http://192.168.4.1/wifi';
 const DEVICE_CONFIG_TIMEOUT_MS = 45000;
-const WEB_APP_URL = 'https://atlas.smartgeoapps.com/smartecodev/';
+const WEB_APP_URL = 'https://atlas.smartgeoapps.com/SmartecoAvd/';
 // const WEB_APP_URL = 'https://app.smarteco.ai/smartecoiaq/';
 const { DeviceConfigModule, WifiConnectModule } = NativeModules;
 
