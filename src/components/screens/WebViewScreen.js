@@ -189,8 +189,23 @@ const WebViewScreen = ({ route }) => {
         return;
       }
 
+      // Force a fresh scan rather than returning Android's cached (often
+      // stale/partial) scan results. reScanAndLoadWifiList resolves with a
+      // string message instead of an array when Android throttles scanning
+      // (max 4 scans / 2 min on Android 9+); fall back to the last cached
+      // list in that case so the user still sees networks.
+      const loadNetworks = async () => {
+        try {
+          const fresh = await WifiManager.reScanAndLoadWifiList();
+          if (Array.isArray(fresh)) return fresh;
+        } catch (e) {
+          // fall through to cached results
+        }
+        return await WifiManager.loadWifiList();
+      };
+
       const [networks, connectedSSID] = await Promise.all([
-        WifiManager.loadWifiList(),
+        loadNetworks(),
         getCurrentWifiInfo(),
       ]);
       sendToWeb({
