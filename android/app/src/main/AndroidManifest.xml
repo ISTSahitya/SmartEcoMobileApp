@@ -12,6 +12,16 @@
     android:name="android.permission.WRITE_EXTERNAL_STORAGE"
     android:maxSdkVersion="28" />
 
+  <!-- BLE device provisioning. Android 12+ (API 31) uses the new runtime BLUETOOTH_SCAN/CONNECT.
+       neverForLocation tells the OS we don't derive physical location from BLE scans, so we don't
+       need to force ACCESS_FINE_LOCATION on Android 12+. Legacy BLUETOOTH/BLUETOOTH_ADMIN cover <= API 30. -->
+  <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+    android:usesPermissionFlags="neverForLocation" />
+  <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+  <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+  <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+  <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
+
   <application
     android:name=".MainApplication"
     android:label="@string/app_name"
@@ -19,7 +29,7 @@
     android:roundIcon="@mipmap/ic_launcher_round"
     android:allowBackup="false"
     android:theme="@style/BootTheme"
-    android:usesCleartextTraffic="${usesCleartextTraffic}"
+    android:usesCleartextTraffic="true"
     android:networkSecurityConfig="@xml/network_security_config"
     android:supportsRtl="true">
     <activity

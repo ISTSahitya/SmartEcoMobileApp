@@ -24,6 +24,12 @@ import RNPrint from 'react-native-print';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
 import useVersionCheck from '../../hooks/useVersionCheck';
 import UpdateModal from '../UpdateModal';
+import {
+  scanForDevices,
+  connectToDevice,
+  disconnectDevice,
+  sendConfig as bleSendConfig,
+} from '../../services/bleProvisioning';
 
 const { VpnModule } = NativeModules;
 
@@ -255,17 +261,28 @@ const WebViewScreen = ({ route }) => {
           }, 3000);
           break;
 
-        case 'CONNECT_WIFI':
-          if (message.ssid) {
-            const { ssid, password } = message;
-            connectToWifi(ssid, password);
+        case 'BLE_SCAN':
+          bleScan();
+          break;
+
+        case 'BLE_CONNECT':
+          if (message.deviceId) {
+            bleConnect(message.deviceId);
           } else {
             sendToWeb({
-              action: 'WIFI_CONNECT_RESULT',
+              action: 'BLE_CONNECT_RESULT',
               success: false,
-              error: 'SSID is required',
+              error: 'deviceId is required',
             });
           }
+          break;
+
+        case 'BLE_SEND_CONFIG':
+          bleSend(message.payload);
+          break;
+
+        case 'BLE_DISCONNECT':
+          disconnectDevice();
           break;
 
         case 'OPEN_APP_SETTINGS':
@@ -279,10 +296,6 @@ const WebViewScreen = ({ route }) => {
         case 'OPEN_WIFI_SETTINGS':
           if (Platform.OS === 'android') {
             Linking.sendIntent('android.settings.WIFI_SETTINGS');
-
-            setTimeout(() => {
-              checkWifiConnection();
-            }, 6000);
           } else {
             Alert.alert('Enable Wi-Fi', 'Please enable Wi-Fi from Settings', [
               { text: 'Cancel', style: 'cancel' },
@@ -324,10 +337,6 @@ const WebViewScreen = ({ route }) => {
 
           break;
 
-        case 'SEND_WIFI_CREDENTIALS':
-          sendWifiCredentials(message.payload);
-          break;
-
         case 'DOWNLOAD_FILE': {
           // Web sends either a flat message or one nested under `payload`.
           const filePayload = message.payload || message;
@@ -361,10 +370,6 @@ const WebViewScreen = ({ route }) => {
           });
           break;
         }
-        case 'RELEASE_WIFI_BINDING':
-          releaseNetworkBinding();
-          break;
-
         case 'CHECK_LOCATION':
           checkAndAskLocation();
           break;
@@ -381,24 +386,52 @@ const WebViewScreen = ({ route }) => {
     }
   };
 
-  const checkWifiConnection = async () => {
-    const connectedSSID = (await getCurrentWifiInfo()).ssid ?? "Iaq_";
-    if (connectedSSID != null && (connectedSSID.startsWith("IAQ_") || connectedSSID.startsWith("iaq_") || connectedSSID.startsWith("Iaq_"))) {
+  /* -------------------- BLE device provisioning -------------------- */
+
+  // Scan for IAQ_ devices advertising over BLE and return the list to the web app.
+  const bleScan = async () => {
+    try {
+      const devices = await scanForDevices({ timeoutMs: 8000 });
+      sendToWeb({ action: 'BLE_SCAN_RESULT', success: true, devices });
+    } catch (e) {
       sendToWeb({
-        action: 'DEVICE_WIFI_CONNECTED',
-        currentWifi: {
-          ssid: connectedSSID,
-        },
-        success: true,
-      });
-    } else {
-      sendToWeb({
-        action: 'DEVICE_WIFI_CONNECTED',
-        currentWifi: {
-          ssid: 'No wifi connected',
-        },
+        action: 'BLE_SCAN_RESULT',
         success: false,
-        error: 'Connection failed. Please try again...',
+        devices: [],
+        error: e?.message || 'Bluetooth scan failed',
+      });
+    }
+  };
+
+  // Connect to the selected BLE device (discover services + negotiate MTU).
+  const bleConnect = async deviceId => {
+    try {
+      const info = await connectToDevice(deviceId);
+      sendToWeb({ action: 'BLE_CONNECT_RESULT', success: true, device: info });
+    } catch (e) {
+      sendToWeb({
+        action: 'BLE_CONNECT_RESULT',
+        success: false,
+        error: e?.message || 'Failed to connect to device',
+      });
+    }
+  };
+
+  // Write the config payload over BLE and relay the device's notify result.
+  const bleSend = async payload => {
+    try {
+      const result = await bleSendConfig(payload);
+      sendToWeb({
+        action: 'BLE_SEND_CONFIG_RESULT',
+        success: !!result.success,
+        internetAvailable: result.internetAvailable,
+        message: result.message,
+      });
+    } catch (e) {
+      sendToWeb({
+        action: 'BLE_SEND_CONFIG_RESULT',
+        success: false,
+        error: e?.message || 'Failed to send configuration',
       });
     }
   };
@@ -519,189 +552,6 @@ const WebViewScreen = ({ route }) => {
       return {
         success: false,
       };
-    }
-  };
-
-  // Derive the ESP32 gateway IP from the device's own Wi-Fi IP.
-  // ESP32 SoftAP default subnet hands clients 192.168.4.x with gateway 192.168.4.1,
-  // so replacing the last octet with `1` matches the running hotspot reliably without
-  // hard-coding an IP. This avoids needing react-native-wifi-reborn's
-  // getGatewayIPAddress() which is not available in v4.13.6.
-  const resolveEsp32Gateway = async () => {
-    const localIP = await WifiManager.getIP();
-    if (!localIP) throw new Error('Could not read device IP');
-    const parts = localIP.split('.');
-    if (parts.length !== 4) throw new Error(`Unexpected IP format: ${localIP}`);
-    parts[3] = '1';
-    return parts.join('.');
-  };
-
-  const sendWifiCredentials = async payload => {
-    const MAX_ATTEMPTS = 3;
-    const REQUEST_TIMEOUT = 30000;
-    const RETRY_DELAY_MS = 10000;
-
-    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-    const getStatusMessage = status => {
-      if (status === 200) return 'Device connected successfully';
-      if (status === 400)
-        return 'Invalid request. Please check the WiFi credentials.';
-      if (status === 401)
-        return 'Authentication failed. Please verify device credentials.';
-      if (status === 404)
-        return 'Device endpoint not found. Please check the device URL.';
-      if (status === 500) return 'Device internal error. Please try again.';
-      if (status >= 400 && status < 500)
-        return `Client error (${status}). Please check your request.`;
-      if (status >= 500)
-        return `Server error (${status}). Device encountered an error.`;
-      return `Unexpected status code: ${status}`;
-    };
-
-    let routedToWifi = false;
-    try {
-      // forceWifiUsageWithOptions and getIP via WifiManager are Android-only in
-      // react-native-wifi-reborn. iOS routes 192.168.4.1 over the active Wi-Fi
-      // interface automatically when joined to the ESP32 SoftAP.
-      if (Platform.OS === 'android') {
-        await WifiManager.forceWifiUsageWithOptions(true, { noInternet: true });
-        routedToWifi = true;
-        await delay(1500); // let the network binding settle
-
-        try {
-          const esp32IP = await resolveEsp32Gateway();
-          console.log('SendWifiCredentials: resolved gateway', esp32IP);
-        } catch (gwErr) {
-          console.warn(
-            'SendWifiCredentials: gateway resolve failed (continuing)',
-            gwErr && gwErr.message,
-          );
-        }
-      }
-
-      const endpoint = `http://192.168.4.1/wifi`;
-      console.log('SendWifiCredentials: target endpoint', endpoint);
-
-      let attempt = 1;
-      while (true) {
-        const abortController = new AbortController();
-        const timeoutId = setTimeout(
-          () => abortController.abort(),
-          REQUEST_TIMEOUT,
-        );
-        try {
-          console.log(
-            `SendWifiCredentials: Attempt ${attempt}/${MAX_ATTEMPTS}`,
-          );
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            signal: abortController.signal,
-          });
-          clearTimeout(timeoutId);
-          console.log(response);
-          const statusCode = response.status;
-
-          let responseBody = null;
-          try {
-            responseBody = await response.json();
-          } catch {
-            responseBody = null;
-          }
-
-          if (response.ok) {
-            if (responseBody && responseBody.internetAvailable === false) {
-              sendToWeb({
-                action: 'SEND_WIFI_CREDENTIALS_RESULT',
-                success: false,
-                message:
-                  'Internet is not available. Please check the WiFi details and try again.',
-              });
-              return;
-            }
-            sendToWeb({
-              action: 'SEND_WIFI_CREDENTIALS_RESULT',
-              success: true,
-              message: getStatusMessage(statusCode),
-            });
-            return;
-          }
-
-          // Don't retry 4xx — request itself is bad.
-          if (statusCode >= 400 && statusCode < 500) {
-            sendToWeb({
-              action: 'SEND_WIFI_CREDENTIALS_RESULT',
-              success: false,
-              message: getStatusMessage(statusCode),
-              error: `HTTP ${statusCode}`,
-            });
-            return;
-          }
-
-          throw new Error(`HTTP ${statusCode}`);
-        } catch (error) {
-          clearTimeout(timeoutId);
-          const isTimeout =
-            error instanceof Error &&
-            (error.name === 'AbortError' || error.message.includes('aborted'));
-          const isNetworkError =
-            error instanceof Error &&
-            (error.message.includes('Failed to fetch') ||
-              error.message.includes('Network request failed') ||
-              error.message.includes('NetworkError'));
-
-          console.warn(
-            `SendWifiCredentials: Attempt ${attempt}/${MAX_ATTEMPTS} failed`,
-            error && error.message,
-          );
-
-          if (attempt >= MAX_ATTEMPTS) {
-            let msg =
-              'Failed to connect to device. Please check the connection and try again.';
-            if (isTimeout) {
-              msg =
-                'Device did not respond within the timeout period. Please check the connection.';
-            } else if (isNetworkError) {
-              msg =
-                'Unable to connect to device. Please ensure the device is powered on and on the same network.';
-            }
-            sendToWeb({
-              action: 'SEND_WIFI_CREDENTIALS_RESULT',
-              success: false,
-              message: msg,
-              error: error instanceof Error ? error.message : 'Unknown error',
-            });
-            return;
-          }
-
-          attempt++;
-          await delay(RETRY_DELAY_MS);
-        }
-      }
-    } catch (e) {
-      sendToWeb({
-        action: 'SEND_WIFI_CREDENTIALS_RESULT',
-        success: false,
-        message:
-          e instanceof Error ? e.message : 'Unable to send Wi-Fi credentials',
-        error: e instanceof Error ? e.message : 'Unknown error',
-      });
-    } finally {
-      // Always release the wifi binding so the rest of the app can use mobile/internet again.
-      if (routedToWifi) {
-        try {
-          await WifiManager.forceWifiUsageWithOptions(false, {
-            noInternet: true,
-          });
-        } catch (releaseErr) {
-          console.warn(
-            'SendWifiCredentials: failed to release forceWifiUsage',
-            releaseErr,
-          );
-        }
-      }
     }
   };
 
@@ -932,80 +782,6 @@ const WebViewScreen = ({ route }) => {
     }
   };
 
-  const forceWifiUsage = async (enable) => {
-    await WifiManager.forceWifiUsageWithOptions(enable, { noInternet: enable });
-  };
-
-  const releaseNetworkBinding = async () => {
-    try {
-      await forceWifiUsage(false);
-    } catch (e) {
-      console.log('forceWifiUsage release error', e);
-    }
-
-    try {
-      await WifiManager.disconnect();
-    } catch (e) {
-      console.log('disconnect error', e);
-    }
-
-    sendToWeb({ action: 'WIFI_BINDING_RELEASED', success: true });
-  };
-
-  const connectToWifi = async (ssid, password) => {
-    try {
-      const locationReady = await checkAndAskLocation();
-      if (!locationReady) {
-        sendToWeb({
-          action: 'WIFI_CONNECT_RESULT',
-          success: false,
-          error: 'Location permission required',
-        });
-        return;
-      }
-
-      await WifiManager.connectToProtectedSSID(ssid, password || '', false, false);
-
-      // Route app process traffic through the IoT AP (it has no internet)
-      try {
-        await forceWifiUsage(true);
-      } catch (e) {
-        console.log('forceWifiUsage enable error', e);
-      }
-
-      // Wait a bit and verify connection
-      setTimeout(async () => {
-        const connectedSSID = await WifiManager.getCurrentWifiSSID();
-        const success = connectedSSID === ssid;
-
-        sendToWeb({
-          action: 'WIFI_CONNECT_RESULT',
-          success,
-          currentWifi: {
-            ssid: connectedSSID,
-            note: 'Wifi details',
-          },
-          message: success
-            ? `Connected to ${ssid}`
-            : 'Connection failed or timed out',
-        });
-      }, 3000);
-    } catch (e) {
-      // Release any partial binding so the app isn't left stranded
-      try {
-        await forceWifiUsage(false);
-      } catch (releaseErr) {
-        console.log('forceWifiUsage release error on connect failure', releaseErr);
-      }
-
-      sendToWeb({
-        action: 'WIFI_CONNECT_RESULT',
-        success: false,
-        error: e.toString(),
-      });
-    }
-  };
-
   return (
     <View
       style={[
@@ -1022,7 +798,7 @@ const WebViewScreen = ({ route }) => {
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
-        source={{ uri: 'https://atlas.smartgeoapps.com/SmartecoAvd/' }}
+        source={{ uri: 'http://192.168.0.194:3000' }}
         style={[styles.webview, { backgroundColor: '#fff' }]}
         contentInsetAdjustmentBehavior="automatic"
         androidLayerType="hardware"
