@@ -60,6 +60,24 @@ const extractDeviceIdFromDeviceSsid = ssid => {
   const separatorIndex = normalizedSsid.indexOf('_');
   return separatorIndex >= 0 ? normalizedSsid.slice(separatorIndex + 1) : '';
 };
+
+// The device may broadcast either the bare "IAQ_" network or the
+// serial-suffixed "IAQ_{serialNumber}" network. Whichever one is requested
+// first, return the other variant so it can be tried as a fallback.
+const getFallbackIaqSsid = (ssid, serialNumber) => {
+  if (!serialNumber) return null;
+
+  const normalizedSsid = normalizeSsid(ssid).toLowerCase();
+  const serialSuffixedSsid = `IAQ_${serialNumber}`;
+
+  if (normalizedSsid === 'iaq_') {
+    return serialSuffixedSsid;
+  }
+  if (normalizedSsid === normalizeSsid(serialSuffixedSsid).toLowerCase()) {
+    return 'IAQ_';
+  }
+  return null;
+};
 const ONBOARDING_BASE_URI = `file://${DeviceConfigModule?.bundlePath ?? ''}/onboarding/index.html`;
 
 const WebViewScreen = ({ route }) => {
@@ -502,7 +520,7 @@ const WebViewScreen = ({ route }) => {
 
         case 'RELEASE_WIFI_BINDING': {
           const { ssid, password } = message;
-          releaseWifiBinding({ ssid, password, payload: message.payload });
+          releaseWifiBinding({ ssid, password });
           break;
         }
 
@@ -816,6 +834,17 @@ const WebViewScreen = ({ route }) => {
         }
 
         const attemptIosConnection = targetSsid => new Promise(async (resolve, reject) => {
+          // If we're already on the target network, skip re-applying the
+          // hotspot config — re-joining a network we're already associated
+          // with can briefly drop the connection and cause the poll below
+          // to falsely report failure (triggering an unnecessary fallback).
+          const alreadyConnectedSSID = (await getCurrentWifiInfo()).ssid;
+          if (normalizeSsid(alreadyConnectedSSID).toLowerCase() === normalizeSsid(targetSsid).toLowerCase()) {
+            logProvisionStep('ios_wifi_already_connected', { targetSsid, connectedSSID: alreadyConnectedSSID });
+            resolve({ success: true, connectedSSID: alreadyConnectedSSID });
+            return;
+          }
+
           try {
             // NEHotspotConfiguration with joinOnce=YES: temporarily joins the network
             // for this session only — not saved to device WiFi settings.
@@ -850,16 +879,12 @@ const WebViewScreen = ({ route }) => {
           setTimeout(pollForConnection, 2000);
         });
 
-        // The device sometimes broadcasts a bare "IAQ_" network instead of
-        // "IAQ_{serialNumber}". Only fall back to the serial-suffixed name when
-        // the requested ssid is that bare prefix — an already-suffixed ssid
-        // like "IAQ_SEihsx" should just connect as given.
-        const isBareIaqSsid = normalizeSsid(ssid).toLowerCase() === 'iaq_';
-        const fallbackSsid = isBareIaqSsid && serialNumber ? `IAQ_${serialNumber}` : null;
+        // The device may broadcast either a bare "IAQ_" network or
+        // "IAQ_{serialNumber}". Only fall back to the other variant if the
+        // requested ssid fails to connect.
+        const fallbackSsid = getFallbackIaqSsid(ssid, serialNumber);
 
         let { success, connectedSSID } = await attemptIosConnection(ssid);
-        console.log(fallbackSsid, "Fallback SSID");
-        
 
         if (!success && fallbackSsid) {
           logProvisionStep('ios_wifi_connect_fallback_attempt', { originalSsid: ssid, fallbackSsid });
@@ -903,7 +928,7 @@ const WebViewScreen = ({ route }) => {
     }
   };
 
-  const releaseWifiBinding = async ({ ssid, password, payload } = {}) => {
+  const releaseWifiBinding = async ({ ssid, password } = {}) => {
     logProvisionStep('release_wifi_binding_received', { ssid });
 
     if (WifiConnectModule?.connectToHomeNetwork && ssid && password) {
