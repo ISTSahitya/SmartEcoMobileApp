@@ -266,6 +266,7 @@ export const scanForDevices = async ({ timeoutMs = 8000 } = {}) => {
 let connectedDevice = null;
 let writeChar = null; // discovered writable characteristic (config in)
 let notifyChar = null; // discovered notifiable characteristic (result out)
+let sendInProgress = false; // guards against concurrent/duplicate sends
 
 export const connectToDevice = async deviceId => {
   const mgr = getManager();
@@ -350,6 +351,14 @@ export const sendConfig = async payload => {
   if (!connectedDevice || !writeChar || !notifyChar) {
     return { success: false, message: 'No BLE device connected' };
   }
+  // Reject a second send while one is already running. Two concurrent sends
+  // interleave their BLE writes and arrive at the device as corrupted/duplicated
+  // chunks (e.g. "LEN:" header twice) → the firmware can't reassemble the JSON.
+  if (sendInProgress) {
+    return { success: false, message: 'A configuration is already in progress' };
+  }
+  sendInProgress = true;
+
   const device = connectedDevice;
   const json = JSON.stringify(payload);
   const body = utf8Bytes(json);
@@ -357,11 +366,12 @@ export const sendConfig = async payload => {
   const chunkSize = device.mtu ? Math.min(device.mtu - 3, 512) : DEFAULT_CHUNK;
   const useWriteResponse = writeChar.isWritableWithResponse;
 
-  return new Promise(async (resolve) => {
+  return new Promise((resolve) => {
     let settled = false;
     const finish = result => {
       if (settled) return;
       settled = true;
+      sendInProgress = false;
       try {
         subscription?.remove();
       } catch (_) {}
@@ -407,8 +417,9 @@ export const sendConfig = async payload => {
       }
     };
 
-    // 2. Write the LEN header, then the JSON body in chunks.
-    try {
+    // 2. Write the LEN header, then the JSON body in chunks. Run sequentially in
+    // an inner async fn so the Promise executor itself stays synchronous.
+    const writeAll = async () => {
       const header = `LEN:${body.length}\n`;
       await writeChunk(bytesToBase64(utf8Bytes(header)));
 
@@ -417,8 +428,10 @@ export const sendConfig = async payload => {
         await writeChunk(bytesToBase64(chunk));
         await delay(20); // small gap so the C6 can drain each +WRITE over UART
       }
-    } catch (e) {
-      finish({ success: false, message: e?.message || 'Failed to send config' });
-    }
+    };
+
+    writeAll().catch(e =>
+      finish({ success: false, message: e?.message || 'Failed to send config' }),
+    );
   });
 };
