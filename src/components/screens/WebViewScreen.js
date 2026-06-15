@@ -466,11 +466,26 @@ const WebViewScreen = ({ route }) => {
       // Now scan connected WiFi
       const connectedSSID = await WifiManager.getCurrentWifiSSID();
       if (connectedSSID) {
+        // Look up the connected network's frequency (band) from the cached scan
+        // list so the web can decide whether to auto-fill it (2.4 GHz only).
+        let frequency = null;
+        try {
+          const list = await WifiManager.loadWifiList();
+          if (Array.isArray(list)) {
+            const match = list.find(n => n.SSID === connectedSSID);
+            if (match && typeof match.frequency === 'number') {
+              frequency = match.frequency;
+            }
+          }
+        } catch (e) {
+          // Ignore — band unknown; the web simply won't auto-fill.
+        }
         sendToWeb({
           action: 'WIFI_CONNECT_RESULT',
           success: true,
           currentWifi: {
             ssid: connectedSSID,
+            frequency,
           },
         });
       } else {
