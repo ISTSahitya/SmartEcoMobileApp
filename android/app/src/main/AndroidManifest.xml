@@ -42,7 +42,7 @@
         <category android:name="android.intent.category.BROWSABLE" />
 
         <data
-          android:scheme="smarteco"
+          android:scheme="istiaqapp"
           android:host="oauth-success" />
       </intent-filter>
     </activity>

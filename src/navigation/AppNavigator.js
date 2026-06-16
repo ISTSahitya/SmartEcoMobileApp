@@ -19,7 +19,7 @@ export default function AppNavigator() {
   }, []);
 
   const linking = {
-    prefixes: ["smarteco://"],
+    prefixes: ["istiaqapp://"],
     config: {
       screens: {
         WebView: "oauth-success",

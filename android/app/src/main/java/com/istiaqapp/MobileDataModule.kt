@@ -1,4 +1,4 @@
-package com.smarteco.app
+package com.istiaqapp
 
 import android.content.Context
 import android.provider.Settings

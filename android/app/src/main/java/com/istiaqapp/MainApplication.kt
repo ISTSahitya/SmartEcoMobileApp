@@ -1,4 +1,4 @@
-package com.smarteco.app
+package com.istiaqapp
 
 import android.app.Application
 import com.facebook.react.PackageList
