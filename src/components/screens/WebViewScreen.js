@@ -23,6 +23,7 @@ import Share from 'react-native-share';
 import RNPrint from 'react-native-print';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
 import NetInfo from "@react-native-community/netinfo";
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import useVersionCheck from '../../hooks/useVersionCheck';
 import UpdateModal from '../UpdateModal';
 //import { check, request, PERMISSIONS, RESULTS } from 'react-native-permissions';
@@ -145,6 +146,20 @@ const WebViewScreen = ({ route }) => {
     return () => subscription.remove();
   }, [handleVersionData]);
 
+  // After user returns from WiFi settings, report the new SSID to the web app
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (nextAppState === 'active' && pendingIosWifiCheckRef.current) {
+        pendingIosWifiCheckRef.current = false;
+        // Small delay — iOS needs a moment to update the reported SSID
+        setTimeout(() => {
+          getConnectedWifiDetails();
+        }, 1000);
+      }
+    });
+    return () => subscription.remove();
+  }, []); // getConnectedWifiDetails only uses refs internally — no stale closure risk
+
   const ensureProvisionAttempt = reason => {
     if (!provisionAttemptRef.current) {
       provisionAttemptRef.current = Date.now();
@@ -152,6 +167,16 @@ const WebViewScreen = ({ route }) => {
     }
     return provisionAttemptRef.current;
   };
+
+  /* configure native Google Sign-In for iOS */
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      GoogleSignin.configure({
+        webClientId: '973195332590-6gb4rgv9g3bn0tk4jaiprfbaho10mh6k.apps.googleusercontent.com',
+        iosClientId: '973195332590-6i02grb0piqu46i3ttnrb7gqqf4fqgms.apps.googleusercontent.com',
+      });
+    }
+  }, []);
 
   /* deeplink setup for oauth login */
   useEffect(() => {
@@ -356,6 +381,21 @@ const WebViewScreen = ({ route }) => {
           ssid: message.payload?.ssid || message.ssid,
           deviceid: message.payload?.deviceid || message.deviceid,
         });
+      }
+
+      if (message.type === 'GOOGLE_AUTH_REQUEST' && Platform.OS === 'ios') {
+        (async () => {
+          try {
+            await GoogleSignin.hasPlayServices();
+            await GoogleSignin.signIn();
+            const { accessToken } = await GoogleSignin.getTokens();
+            sendToWeb({ type: 'OAUTH_SUCCESS', access_token: accessToken });
+          } catch (error) {
+            const msg = error?.message || 'Google sign-in failed';
+            sendToWeb({ type: 'OAUTH_ERROR', error: msg });
+          }
+        })();
+        return;
       }
 
       switch (message.action) {
@@ -955,10 +995,23 @@ const WebViewScreen = ({ route }) => {
       // No home wifi credentials — remove the device hotspot config so iOS
       // disconnects from the device network immediately.
       try {
-        const currentSsid = await WifiManager.getCurrentWifiSSID();
+        const currentSsid = await WifiManager.getCurrentWifiSSID().catch(() => null);
         if (currentSsid) {
           await WifiConnectModule.disconnectFromNetwork(currentSsid);
-          logProvisionStep('ios_disconnected_device_wifi', { ssid: currentSsid });
+          // iOS NEHotspotConfiguration removeConfiguration is async internally —
+          // poll up to 10s to confirm the SSID actually changed.
+          let disconnected = false;
+          for (let i = 0; i < 5; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            const ssidAfter = await WifiManager.getCurrentWifiSSID().catch(() => null);
+            if (!ssidAfter || ssidAfter !== currentSsid) {
+              disconnected = true;
+              break;
+            }
+            // Still connected — try removing the config again
+            await WifiConnectModule.disconnectFromNetwork(currentSsid).catch(() => {});
+          }
+          logProvisionStep('ios_disconnected_device_wifi', { ssid: currentSsid, verified: disconnected });
         }
       } catch (e) {
         logProvisionStep('ios_disconnect_device_wifi_failed', { error: e?.toString?.() });

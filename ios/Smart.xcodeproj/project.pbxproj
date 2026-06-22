@@ -223,13 +223,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Smart/Pods-Smart-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Smart/Pods-Smart-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -283,13 +279,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Smart/Pods-Smart-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Smart/Pods-Smart-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -321,11 +313,11 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Smart/Smart.entitlements;
-				CURRENT_PROJECT_VERSION = 2.3;
+				CURRENT_PROJECT_VERSION = 2.4;
 				DEVELOPMENT_TEAM = 9N5UX422E4;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Smart/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Smart Eco";
+				INFOPLIST_KEY_CFBundleDisplayName = SmartEco;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -357,10 +349,10 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Smart/Smart.entitlements;
-				CURRENT_PROJECT_VERSION = 2.3;
+				CURRENT_PROJECT_VERSION = 2.4;
 				DEVELOPMENT_TEAM = 9N5UX422E4;
 				INFOPLIST_FILE = Smart/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Smart Eco";
+				INFOPLIST_KEY_CFBundleDisplayName = SmartEco;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -374,7 +366,7 @@
 					"-lc++",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.ist.smarteco;
-				PRODUCT_NAME = Smart;
+				PRODUCT_NAME = SmartEco;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_VERSION = 5.0;
