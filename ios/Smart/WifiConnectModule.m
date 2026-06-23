@@ -44,6 +44,14 @@ RCT_EXPORT_METHOD(connectToNetwork:(NSString *)ssid
       return;
     }
 
+    // User explicitly tapped "Don't Join" — no point polling, fail immediately.
+    if ([error.domain isEqualToString:NEHotspotConfigurationErrorDomain] &&
+        error.code == NEHotspotConfigurationErrorUserDenied) {
+      NSLog(@"[WifiConnectModule] user denied connection to %@", ssid);
+      reject(@"wifi_connect_user_denied", @"User denied the Wi-Fi connection", error);
+      return;
+    }
+
     NSString *errorMessage = error.localizedDescription ?: @"Failed to connect to WiFi network";
     NSLog(@"[WifiConnectModule] error code=%ld domain=%@ message=%@",
           (long)error.code, error.domain, errorMessage);
@@ -81,6 +89,13 @@ RCT_EXPORT_METHOD(connectToHomeNetwork:(NSString *)ssid
       return;
     }
 
+    if ([error.domain isEqualToString:NEHotspotConfigurationErrorDomain] &&
+        error.code == NEHotspotConfigurationErrorUserDenied) {
+      NSLog(@"[WifiConnectModule] connectToHomeNetwork user denied connection to %@", ssid);
+      reject(@"wifi_connect_home_user_denied", @"User denied the home Wi-Fi connection", error);
+      return;
+    }
+
     NSString *errorMessage = error.localizedDescription ?: @"Failed to connect to WiFi network";
     NSLog(@"[WifiConnectModule] connectToHomeNetwork error code=%ld domain=%@ message=%@",
           (long)error.code, error.domain, errorMessage);
@@ -93,6 +108,9 @@ RCT_EXPORT_METHOD(disconnectFromNetwork:(NSString *)ssid
                   rejecter:(RCTPromiseRejectBlock)reject)
 {
   NSLog(@"[WifiConnectModule] disconnectFromNetwork ssid=%@", ssid);
+  // iOS has no public API to force an immediate WiFi disconnect.
+  // Removing the config prevents iOS from auto-rejoining; the active
+  // association drops naturally when the device reboots after provisioning.
   [[NEHotspotConfigurationManager sharedManager] removeConfigurationForSSID:ssid];
   NSLog(@"[WifiConnectModule] removed hotspot config for %@", ssid);
   resolve(@{ @"success": @YES });

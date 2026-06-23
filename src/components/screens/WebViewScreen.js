@@ -62,23 +62,7 @@ const extractDeviceIdFromDeviceSsid = ssid => {
   return separatorIndex >= 0 ? normalizedSsid.slice(separatorIndex + 1) : '';
 };
 
-// The device may broadcast either the bare "IAQ_" network or the
-// serial-suffixed "IAQ_{serialNumber}" network. Whichever one is requested
-// first, return the other variant so it can be tried as a fallback.
-const getFallbackIaqSsid = (ssid, serialNumber) => {
-  if (!serialNumber) return null;
 
-  const normalizedSsid = normalizeSsid(ssid).toLowerCase();
-  const serialSuffixedSsid = `IAQ_${serialNumber}`;
-
-  if (normalizedSsid === 'iaq_') {
-    return serialSuffixedSsid;
-  }
-  if (normalizedSsid === normalizeSsid(serialSuffixedSsid).toLowerCase()) {
-    return 'IAQ_';
-  }
-  return null;
-};
 const ONBOARDING_BASE_URI = `file://${DeviceConfigModule?.bundlePath ?? ''}/onboarding/index.html`;
 
 const WebViewScreen = ({ route }) => {
@@ -91,6 +75,7 @@ const WebViewScreen = ({ route }) => {
   const checkWifiConnectionRef = useRef(null);
   const provisionAttemptRef = useRef(0);
   const pendingOAuthMessageRef = useRef(null);
+  const isCredentialsSendingRef = useRef(false);
 
   const logProvisionStep = (step, details = {}) => {
     logDeviceSetup(step, {
@@ -419,9 +404,9 @@ const WebViewScreen = ({ route }) => {
 
         case 'CONNECT_WIFI':
           if (message.ssid) {
-            const { ssid, password, serialNumber} = message;
+            const { ssid, password} = message;
 
-            connectToWifi(ssid, password, serialNumber);
+            connectToWifi(ssid, password);
           } else {
             sendToWeb({
               action: 'WIFI_CONNECT_RESULT',
@@ -861,10 +846,11 @@ const WebViewScreen = ({ route }) => {
     }
   };
 
-  const connectToWifi = async (ssid, password, serialNumber) => {
+  const connectToWifi = async (ssid, password) => {
     try {
       if (Platform.OS === 'ios') {
         if (!WifiConnectModule?.connectToNetwork) {
+          logProvisionStep('ios_wifi_module_unavailable', { ssid });
           sendToWeb({
             action: 'WIFI_CONNECT_RESULT',
             success: false,
@@ -873,93 +859,74 @@ const WebViewScreen = ({ route }) => {
           return;
         }
 
-        const attemptIosConnection = targetSsid => new Promise(async (resolve, reject) => {
-          // If we're already on the target network, skip re-applying the
-          // hotspot config — re-joining a network we're already associated
-          // with can briefly drop the connection and cause the poll below
-          // to falsely report failure (triggering an unnecessary fallback).
-          const alreadyConnectedSSID = (await getCurrentWifiInfo()).ssid;
-          if (normalizeSsid(alreadyConnectedSSID).toLowerCase() === normalizeSsid(targetSsid).toLowerCase()) {
-            logProvisionStep('ios_wifi_already_connected', { targetSsid, connectedSSID: alreadyConnectedSSID });
-            resolve({ success: true, connectedSSID: alreadyConnectedSSID });
-            return;
-          }
-
-          try {
-            // NEHotspotConfiguration with joinOnce=YES: temporarily joins the network
-            // for this session only — not saved to device WiFi settings.
-            // iOS will show a system confirmation dialog to the user.
-            await WifiConnectModule.connectToNetwork(targetSsid, password);
-          } catch (e) {
-            reject(e);
-            return;
-          }
-
-          // iOS wifi switching can take longer than a single check allows.
-          // Poll the current SSID until it matches the target or we time out.
-          const MAX_CHECKS = 6;
-          const CHECK_INTERVAL_MS = 1500;
+        // iOS shows a transient "Unable to Join" system dialog even when
+        // NEHotspotConfiguration eventually succeeds. Always poll after the
+        // connect call (whether it resolves or rejects) to get ground-truth.
+        const pollForConnection = async () => {
+          const MAX_CHECKS = 5;
+          const CHECK_INTERVAL_MS = 1000;
           let checkCount = 0;
-          const pollForConnection = async () => {
+          let connectedSSID = null;
+          let success = false;
+          while (checkCount < MAX_CHECKS) {
+            await new Promise(r => setTimeout(r, CHECK_INTERVAL_MS));
             checkCount++;
-            const connectedSSID = (await getCurrentWifiInfo()).ssid;
-            const success = normalizeSsid(connectedSSID).toLowerCase() === normalizeSsid(targetSsid).toLowerCase();
-            logProvisionStep('ios_wifi_connect_poll', {
-              checkCount,
-              connectedSSID,
-              targetSsid,
-              success,
-            });
-            if (success || checkCount >= MAX_CHECKS) {
-              resolve({ success, connectedSSID });
-            } else {
-              setTimeout(pollForConnection, CHECK_INTERVAL_MS);
-            }
-          };
-          setTimeout(pollForConnection, 2000);
-        });
+            connectedSSID = (await getCurrentWifiInfo()).ssid;
+            success = normalizeSsid(connectedSSID).toLowerCase() === normalizeSsid(ssid).toLowerCase();
+            logProvisionStep('ios_wifi_connect_poll', { checkCount, connectedSSID, targetSsid: ssid, success });
+            if (success) break;
+          }
+          return { success, connectedSSID };
+        };
 
-        // The device may broadcast either a bare "IAQ_" network or
-        // "IAQ_{serialNumber}". Only fall back to the other variant if the
-        // requested ssid fails to connect.
-        const fallbackSsid = getFallbackIaqSsid(ssid, serialNumber);
-
-        let { success, connectedSSID } = await attemptIosConnection(ssid);
-
-        if (!success && fallbackSsid) {
-          logProvisionStep('ios_wifi_connect_fallback_attempt', { originalSsid: ssid, fallbackSsid });
-          ({ success, connectedSSID } = await attemptIosConnection(fallbackSsid));
+        logProvisionStep('ios_wifi_connect_start', { ssid });
+        let connectError = null;
+        let userDenied = false;
+        try {
+          await WifiConnectModule.connectToNetwork(ssid, password);
+          logProvisionStep('ios_wifi_connect_called', { ssid });
+        } catch (e) {
+          connectError = e;
+          userDenied = e?.code === 'wifi_connect_user_denied';
+          logProvisionStep('ios_wifi_connect_error', { ssid, userDenied, error: e?.toString() });
         }
 
-        sendToWeb({
-          action: 'WIFI_CONNECT_RESULT',
-          success,
-          currentWifi: { ssid: success ? connectedSSID : ssid },
-          message: success ? `Connected to ${connectedSSID}` : 'Connection failed or timed out',
-        });
-      } else {
-        const locationReady = await checkAndAskLocation();
-        if (!locationReady) {
+        const { success, connectedSSID } = userDenied
+          ? { success: false, connectedSSID: null }
+          : await pollForConnection();
+
+        if (success) {
           sendToWeb({
             action: 'WIFI_CONNECT_RESULT',
-            success: false,
-            error: 'Location permission required',
+            success: true,
+            currentWifi: { ssid: connectedSSID },
+            message: `Connected to ${connectedSSID}`,
           });
-          return;
+        } else {
+          Alert.alert(
+            'Wi-Fi Connection Failed',
+            `Unable to connect to "${ssid}". Please try again.`,
+            [
+              {
+                text: 'Cancel',
+                style: 'cancel',
+                onPress: () =>
+                  sendToWeb({
+                    action: 'WIFI_CONNECT_RESULT',
+                    success: false,
+                    error: connectError?.toString() ?? 'Connection timed out',
+                  }),
+              },
+              {
+                text: 'Reconnect',
+                onPress: () => connectToWifi(ssid, password),
+              },
+            ],
+          );
         }
-        await WifiManager.connectToProtectedSSID(ssid, password, false, false);
-        setTimeout(async () => {
-          const connectedSSID = await WifiManager.getCurrentWifiSSID();
-          const success = connectedSSID === ssid;
-          sendToWeb({
-            action: 'WIFI_CONNECT_RESULT',
-            success,
-            currentWifi: { ssid: connectedSSID, password, note: 'Wifi details' },
-            message: success ? `Connected to ${ssid}` : 'Connection failed or timed out',
-          });
-        }, 3000);
       }
     } catch (e) {
+      logProvisionStep('ios_wifi_connect_unexpected_error', { ssid, error: e?.toString() });
       sendToWeb({
         action: 'WIFI_CONNECT_RESULT',
         success: false,
@@ -970,6 +937,15 @@ const WebViewScreen = ({ route }) => {
 
   const releaseWifiBinding = async ({ ssid, password } = {}) => {
     logProvisionStep('release_wifi_binding_received', { ssid });
+
+    // Only act if the phone is currently on a device (IAQ_/IAM_) network.
+    // If iOS already auto-switched to home WiFi, there is nothing to release.
+    const currentSsidBeforeRelease = await WifiManager.getCurrentWifiSSID().catch(() => null);
+    if (!isDeviceWifiSsid(currentSsidBeforeRelease)) {
+      logProvisionStep('release_wifi_binding_skipped_not_on_device_wifi', { currentSsid: currentSsidBeforeRelease });
+      sendToWeb({ action: 'WIFI_BINDING_RELEASED' });
+      return;
+    }
 
     if (WifiConnectModule?.connectToHomeNetwork && ssid && password) {
       try {
@@ -982,34 +958,73 @@ const WebViewScreen = ({ route }) => {
         for (let i = 0; i < 5; i++) {
           await new Promise(r => setTimeout(r, 2000));
           const currentSsid = await WifiManager.getCurrentWifiSSID().catch(() => null);
-          if (currentSsid && currentSsid === ssid) {
-            connected = true;
-            break;
+          connected = !!(currentSsid && currentSsid === ssid);
+          logProvisionStep('ios_reconnect_home_wifi_poll', {
+            check: i + 1,
+            targetSsid: ssid,
+            currentSsid,
+            connected,
+          });
+          if (connected) break;
+        }
+
+        if (!connected) {
+          logProvisionStep('ios_reconnect_home_wifi_poll_failed', { ssid });
+
+          const userChoice = await new Promise(resolve => {
+            Alert.alert(
+              'Home Wi-Fi Reconnection Failed',
+              `Unable to reconnect to "${ssid}". Would you like to try again?`,
+              [
+                { text: 'Skip', style: 'cancel', onPress: () => resolve('skip') },
+                { text: 'Reconnect', onPress: () => resolve('reconnect') },
+              ],
+            );
+          });
+
+          logProvisionStep('ios_reconnect_home_wifi_alert_choice', { ssid, userChoice });
+
+          if (userChoice === 'reconnect') {
+            try {
+              logProvisionStep('ios_reconnect_home_wifi_retry', { ssid });
+              await WifiConnectModule.connectToHomeNetwork(ssid, password);
+              logProvisionStep('ios_reconnect_home_wifi_retry_called', { ssid });
+            } catch (retryErr) {
+              const userDenied = retryErr?.code === 'wifi_connect_home_user_denied';
+              logProvisionStep('ios_reconnect_home_wifi_retry_failed', {
+                ssid,
+                userDenied,
+                error: retryErr?.toString?.(),
+              });
+            }
           }
         }
+
         logProvisionStep('ios_reconnected_to_home_wifi', { ssid, verified: connected });
       } catch (e) {
         logProvisionStep('ios_reconnect_to_home_wifi_failed', { error: e?.toString?.() });
       }
     } else {
-      // No home wifi credentials — remove the device hotspot config so iOS
-      // disconnects from the device network immediately.
+      // No home wifi credentials — remove the NEHotspotConfiguration so iOS
+      // won't auto-rejoin. The active association drops when the IAQ device
+      // reboots after provisioning; iOS has no public API to force disconnect.
       try {
         const currentSsid = await WifiManager.getCurrentWifiSSID().catch(() => null);
         if (currentSsid) {
           await WifiConnectModule.disconnectFromNetwork(currentSsid);
-          // iOS NEHotspotConfiguration removeConfiguration is async internally —
-          // poll up to 10s to confirm the SSID actually changed.
           let disconnected = false;
           for (let i = 0; i < 5; i++) {
             await new Promise(r => setTimeout(r, 2000));
             const ssidAfter = await WifiManager.getCurrentWifiSSID().catch(() => null);
-            if (!ssidAfter || ssidAfter !== currentSsid) {
-              disconnected = true;
-              break;
-            }
-            // Still connected — try removing the config again
-            await WifiConnectModule.disconnectFromNetwork(currentSsid).catch(() => {});
+            disconnected = !ssidAfter || ssidAfter !== currentSsid;
+            logProvisionStep('ios_disconnect_poll', {
+              check: i + 1,
+              currentSsid,
+              ssidAfter,
+              disconnected,
+            });
+            if (disconnected) break;
+            await WifiConnectModule.disconnectFromNetwork(currentSsid);
           }
           logProvisionStep('ios_disconnected_device_wifi', { ssid: currentSsid, verified: disconnected });
         }
@@ -1023,13 +1038,13 @@ const WebViewScreen = ({ route }) => {
   };
 
   const sendWifiCredentials = async (payload) => {
+    if (isCredentialsSendingRef.current) {
+      logProvisionStep('send_wifi_credentials_skipped_already_in_progress');
+      return;
+    }
+    isCredentialsSendingRef.current = true;
     ensureProvisionAttempt('sendWifiCredentials');
-    const MAX_ATTEMPTS = 3;
-    const REQUEST_TIMEOUT = 30000;
-    const RETRY_DELAY_MS = 10000;
     const endpoint = DEVICE_CONFIG_URL;
-
-    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     const getStatusMessage = (status) => {
       if (status >= 200 && status < 300) return 'Device accepted Wi-Fi details';
@@ -1115,192 +1130,114 @@ const WebViewScreen = ({ route }) => {
 
         if (!DeviceConfigModule?.send) {
           sendResult({ success: false, error: 'DeviceConfigModule is not available' });
+          isCredentialsSendingRef.current = false;
           return;
         }
 
-        try {
-          const result = await DeviceConfigModule.send(endpoint, devicePayload, DEVICE_CONFIG_TIMEOUT_MS);
-          
-          const statusCode = Number(result?.status || 0);
+        const IOS_MAX_ATTEMPTS = 3;
+        let iosAttempt = 1;
 
-          let responseBody;
+        while (iosAttempt <= IOS_MAX_ATTEMPTS) {
           try {
-            responseBody = JSON.parse(result?.response || '');
-            console.log(responseBody, "Response from device wifi");
-          } catch (parseError) {
-            responseBody = undefined;
-          }
-
-          // The device API always responds with HTTP 200, even when it couldn't
-          // reach the internet. Compare strictly against false so a missing field
-          // (older firmware) doesn't get mistaken for a failure.
-          const internetUnavailable = responseBody?.internetAvailable === false;
-          const success = statusCode >= 200 && statusCode < 300 && !internetUnavailable;
-
-          if (!success) {
-            await releaseWifiBinding();
-          }
-
-          logProvisionStep('ios_native_send_wifi_credentials_result', {
-            status: statusCode,
-            success,
-            internetAvailable: responseBody?.internetAvailable,
-            responseLength: result?.response?.length || 0,
-            response: result?.response || '',
-            requestBody: result?.requestBody,
-          });
-
-          sendResult({
-            success,
-            status: statusCode,
-            response: result?.response,
-            requestPayload: devicePayload,
-            requestBody: result?.requestBody || JSON.stringify(devicePayload),
-            message: internetUnavailable
-              ? 'Internet is not available. Please check the WiFi details and try again.'
-              : getStatusMessage(statusCode),
-            error: success ? undefined : (internetUnavailable ? 'Internet not available' : `HTTP ${statusCode}`),
-          });
-        } catch (e) {
-          const errMsg = e?.message?.toLowerCase() || '';
-          // -1005 means the device dropped the connection after accepting credentials —
-          // this is the expected iOS success path (device resets to join home wifi).
-          const deviceAccepted = errMsg.includes('network connection was lost') ||
-                                 errMsg.includes('connection was lost');
-          logProvisionStep('ios_native_send_wifi_credentials_error', {
-            error: e?.toString?.(),
-            deviceAccepted,
-          });
-          if (deviceAccepted) {
-            sendResult({
-              success: true,
-              status: 200,
-              message: 'Device accepted Wi-Fi details',
-              requestBody: JSON.stringify(devicePayload),
+            logProvisionStep('ios_native_send_wifi_credentials_attempt', {
+              attempt: iosAttempt,
+              maxAttempts: IOS_MAX_ATTEMPTS,
             });
-          } else {
-            await releaseWifiBinding();
-            sendResult({
-              success: false,
-              error: e?.message || e?.toString?.() || 'Unknown error',
-              message: 'Failed to send Wi-Fi credentials to the device.',
+
+            const result = await DeviceConfigModule.send(endpoint, devicePayload, DEVICE_CONFIG_TIMEOUT_MS);
+
+            const statusCode = Number(result?.status || 0);
+
+            let responseBody;
+            try {
+              responseBody = JSON.parse(result?.response || '');
+              console.log(responseBody, "Response from device wifi");
+            } catch (parseError) {
+              responseBody = undefined;
+            }
+
+            // The device API always responds with HTTP 200, even when it couldn't
+            // reach the internet. Compare strictly against false so a missing field
+            // (older firmware) doesn't get mistaken for a failure.
+            const internetUnavailable = responseBody?.internetAvailable === false;
+            const success = statusCode >= 200 && statusCode < 300 && !internetUnavailable;
+
+            if (!success) {
+              await releaseWifiBinding();
+            }
+
+            logProvisionStep('ios_native_send_wifi_credentials_result', {
+              attempt: iosAttempt,
+              status: statusCode,
+              success,
+              internetAvailable: responseBody?.internetAvailable,
+              responseLength: result?.response?.length || 0,
+              response: result?.response || '',
+              requestBody: result?.requestBody,
             });
+
+            sendResult({
+              success,
+              status: statusCode,
+              response: result?.response,
+              requestPayload: devicePayload,
+              requestBody: result?.requestBody || JSON.stringify(devicePayload),
+              message: internetUnavailable
+                ? 'Internet is not available. Please check the WiFi details and try again.'
+                : getStatusMessage(statusCode),
+              error: success ? undefined : (internetUnavailable ? 'Internet not available' : `HTTP ${statusCode}`),
+            });
+            break; // success — exit retry loop
+
+          } catch (e) {
+            // const errMsg = e?.message?.toLowerCase() || '';
+            // -1005 means the device dropped the connection after accepting credentials —
+            // this is the expected iOS success path (device resets to join home wifi).
+            // const deviceAccepted = errMsg.includes('network connection was lost') ||
+            //                        errMsg.includes('connection was lost');
+
+            logProvisionStep('ios_native_send_wifi_credentials_error', {
+              attempt: iosAttempt,
+              maxAttempts: IOS_MAX_ATTEMPTS,
+              error: e?.toString?.(),
+            });
+
+            // if (deviceAccepted) {
+            //   sendResult({
+            //     success: true,
+            //     status: 200,
+            //     message: 'Device accepted Wi-Fi details',
+            //     requestBody: JSON.stringify(devicePayload),
+            //   });
+            //   break; // treated as success — exit retry loop
+            // }
+
+            if (iosAttempt >= IOS_MAX_ATTEMPTS) {
+              await releaseWifiBinding();
+              sendResult({
+                success: false,
+                error: e?.message || e?.toString?.() || 'Unknown error',
+                message: 'Failed to send Wi-Fi credentials to the device.',
+              });
+              break;
+            }
+
+            // Short delay only — long gaps give iOS time to auto-switch networks.
+            // We don't reconnect here: showing the iOS join dialog on every retry
+            // is a bad experience. If iOS switched away the next attempt will fail
+            // fast and we exhaust retries without annoying the user.
+            logProvisionStep('ios_native_send_wifi_credentials_retry', {
+              attempt: iosAttempt,
+              currentSsid: (await getCurrentWifiInfo()).ssid,
+            });
+            await new Promise(r => setTimeout(r, 1000));
+            iosAttempt += 1;
           }
         }
+      isCredentialsSendingRef.current = false;
       return;
     }
 
-    let routedToWifi = false;
-    try {
-      await WifiManager.forceWifiUsageWithOptions(true, { noInternet: true });
-      routedToWifi = true;
-      await delay(1500);
-
-      let attempt = 1;
-      while (attempt <= MAX_ATTEMPTS) {
-        const abortController = new AbortController();
-        const timeoutId = setTimeout(() => abortController.abort(), REQUEST_TIMEOUT);
-
-        try {
-          logProvisionStep('android_send_wifi_credentials_attempt', {
-            endpoint,
-            attempt,
-            maxAttempts: MAX_ATTEMPTS,
-          });
-          logPayloadSnapshot('android_send_wifi_credentials_payload', payload);
-
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            signal: abortController.signal,
-          });
-          clearTimeout(timeoutId);
-
-          const statusCode = response.status;
-          if (response.ok) {
-            sendResult({
-              success: true,
-              status: statusCode,
-              requestPayload: payload,
-              requestBody: JSON.stringify(payload),
-              message: getStatusMessage(statusCode),
-            });
-            return;
-          }
-
-          if (statusCode >= 400 && statusCode < 500) {
-            sendResult({
-              success: false,
-              status: statusCode,
-              requestPayload: payload,
-              requestBody: JSON.stringify(payload),
-              message: getStatusMessage(statusCode),
-              error: `HTTP ${statusCode}`,
-            });
-            return;
-          }
-
-          throw new Error(`HTTP ${statusCode}`);
-        } catch (error) {
-          clearTimeout(timeoutId);
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          const isTimeout = error instanceof Error && (
-            error.name === 'AbortError' || error.message.includes('aborted')
-          );
-          const isNetworkError = error instanceof Error && (
-            error.message.includes('Failed to fetch') ||
-            error.message.includes('Network request failed') ||
-            error.message.includes('NetworkError')
-          );
-
-          logProvisionStep('android_send_wifi_credentials_attempt_failed', {
-            attempt,
-            maxAttempts: MAX_ATTEMPTS,
-            error: errorMessage,
-          });
-
-          if (attempt >= MAX_ATTEMPTS) {
-            let msg = 'Failed to connect to device. Please check the connection and try again.';
-            if (isTimeout) {
-              msg = 'Device did not respond within the timeout period. Please check the connection.';
-            } else if (isNetworkError) {
-              msg = 'Unable to connect to device. Please ensure the phone is still connected to the device Wi-Fi.';
-            }
-            sendResult({
-              success: false,
-              message: msg,
-              error: errorMessage || 'Unknown error',
-              requestPayload: payload,
-              requestBody: JSON.stringify(payload),
-            });
-            return;
-          }
-
-          attempt += 1;
-          await delay(RETRY_DELAY_MS);
-        }
-      }
-    } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : String(e);
-      sendResult({
-        success: false,
-        message: errorMessage || 'Unable to send Wi-Fi details',
-        error: errorMessage || 'Unknown error',
-        requestPayload: payload,
-        requestBody: JSON.stringify(payload),
-      });
-    } finally {
-      if (routedToWifi) {
-        try {
-          await WifiManager.forceWifiUsageWithOptions(false, { noInternet: true });
-        } catch (releaseErr) {
-          logProvisionStep('android_release_force_wifi_failed', {
-            error: releaseErr?.toString?.(),
-          });
-        }
-      }
-    }
   };
 
   const stripBase64Prefix = data => {
