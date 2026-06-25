@@ -8,6 +8,7 @@ import {
   Linking,
   ScrollView,
   Image,
+  ImageBackground,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 
@@ -15,6 +16,7 @@ const ROCKET_IMG = require('../assets/images/RocketUpdate.png');
 const MOBILE_IMG = require('../assets/images/MobileImage.png');
 const NEW_BADGE_IMG = require('../assets/images/NewBadge.png');
 const CELEBRATION_IMG = require('../assets/images/Celebration.png');
+const SOFT_BG_IMG = require('../assets/images/SoftUpdateBackground.png');
 
 const FONT = 'DM Sans';
 
@@ -157,13 +159,20 @@ const UpdateModal = ({ visible, type, data, onDismiss, onSkipVersion }) => {
   return (
     <Modal
       visible={visible}
-      transparent
       animationType="fade"
       statusBarTranslucent
       onRequestClose={() => onDismiss?.()}
     >
-      <View style={styles.softOverlay}>
-        <View style={styles.card}>
+      <ImageBackground
+        source={SOFT_BG_IMG}
+        style={styles.softFullScreen}
+        resizeMode="cover"
+      >
+        <ScrollView
+          contentContainerStyle={styles.softScrollContent}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
           {/* Rocket icon */}
           <View style={styles.iconWrap}>
             <Image
@@ -191,22 +200,19 @@ const UpdateModal = ({ visible, type, data, onDismiss, onSkipVersion }) => {
           {/* Update details */}
           <View style={styles.detailsBox}>
             <Text style={styles.detailsLabel}>Update Details</Text>
-            <ScrollView
-              style={styles.detailsScroll}
-              showsVerticalScrollIndicator={false}
-            >
-              {features.map((item, idx) => (
-                <View key={idx} style={styles.featureRow}>
-                  <View style={styles.checkCircle}>
-                    <Text style={styles.checkMark}>✓</Text>
-                  </View>
-                  <Text style={styles.featureText}>{item}</Text>
+            {features.map((item, idx) => (
+              <View key={idx} style={styles.featureRow}>
+                <View style={styles.checkCircle}>
+                  <Text style={styles.checkMark}>✓</Text>
                 </View>
-              ))}
-            </ScrollView>
+                <Text style={styles.featureText}>{item}</Text>
+              </View>
+            ))}
           </View>
+        </ScrollView>
 
-          {/* Update button */}
+        {/* Bottom actions */}
+        <View style={styles.softFooter}>
           <Pressable
             onPress={handleUpdate}
             style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1, width: '100%' }]}
@@ -242,13 +248,32 @@ const UpdateModal = ({ visible, type, data, onDismiss, onSkipVersion }) => {
             ) : null}
           </View>
         </View>
-      </View>
+      </ImageBackground>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  // ---------- Soft / maintenance (centered card) ----------
+  // ---------- Soft update (full screen) ----------
+  softFullScreen: {
+    flex: 1,
+    backgroundColor: '#D8EBE6',
+  },
+  softScrollContent: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    paddingTop: 56,
+    paddingBottom: 24,
+  },
+  softFooter: {
+    paddingHorizontal: 28,
+    paddingTop: 12,
+    paddingBottom: 32,
+    backgroundColor: '#D8EBE6',
+  },
+  // ---------- Maintenance (centered card) ----------
   softOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 60, 50, 0.45)',
@@ -314,11 +339,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   buildPill: {
-    backgroundColor: '#D4F1E0',
-    borderRadius: 10,
+    backgroundColor: '#FFFFFF33',
+    borderRadius: 30,
+    overflow: 'hidden',
     paddingVertical: 9,
     paddingHorizontal: 16,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
   },
   buildPillText: {
     fontFamily: FONT,
@@ -327,17 +355,20 @@ const styles = StyleSheet.create({
     color: '#0F796B',
   },
   detailsBox: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: '#FFFFFF33',
+    borderRadius: 20,
+    overflow: 'hidden',
     padding: 16,
     width: '100%',
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
   },
   detailsLabel: {
     fontFamily: FONT,
     fontSize: 14,
     fontWeight: '700',
-    color: '#0E2A24',
+    color: '#363636',
     marginBottom: 12,
   },
   detailsScroll: {
@@ -370,7 +401,7 @@ const styles = StyleSheet.create({
     fontFamily: FONT,
     fontSize: 13,
     fontWeight: '400',
-    color: '#3F514B',
+    color: '#4C5C68',
     lineHeight: 19,
   },
   // ---------- Shared primary button ----------
