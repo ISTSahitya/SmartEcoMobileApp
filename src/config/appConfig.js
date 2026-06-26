@@ -1,4 +1,7 @@
 const APP_CONFIG = {
+  // App identifier used for version check API
+  APP_NAME: 'ISTIAQAPP',
+
   // AsyncStorage keys for version check
   STORAGE_KEYS: {
     VERSION_CHECK_LAST_DISMISSED: 'VERSION_CHECK_LAST_DISMISSED',

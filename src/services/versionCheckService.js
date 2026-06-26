@@ -29,6 +29,16 @@ const compareVersions = (a, b) => {
 export const checkVersion = async (versionData) => {
   const currentVersion = DeviceInfo.getVersion();
 
+  console.log('========== APP VERSION CHECK ==========');
+  console.log('[VersionCheck] App Name:', versionData.appName || 'N/A');
+  console.log('[VersionCheck] Current App Version:', currentVersion);
+  console.log('[VersionCheck] Latest Version (from DB):', versionData.latestVersion);
+  console.log('[VersionCheck] Min Supported Version:', versionData.minSupportedVersion);
+  console.log('[VersionCheck] Store URL:', versionData.storeUrl);
+  console.log('[VersionCheck] Release Notes:', versionData.releaseNotes);
+  console.log('[VersionCheck] Maintenance Mode:', versionData.isMaintenanceMode);
+  console.log('=======================================');
+
   // Cache the response for offline fallback
   try {
     await AsyncStorage.setItem(
@@ -41,11 +51,13 @@ export const checkVersion = async (versionData) => {
 
   // Maintenance mode check
   if (versionData.isMaintenanceMode) {
+    console.log('[VersionCheck] Result: MAINTENANCE MODE');
     return { type: 'maintenance', data: versionData };
   }
 
   // Force update: current version is below minimum supported
   if (compareVersions(currentVersion, versionData.minSupportedVersion) < 0) {
+    console.log('[VersionCheck] Result: FORCE UPDATE required (current:', currentVersion, '< min:', versionData.minSupportedVersion, ')');
     return { type: 'force', data: versionData };
   }
 
@@ -74,10 +86,12 @@ export const checkVersion = async (versionData) => {
       }
     }
 
+    console.log('[VersionCheck] Result: SOFT UPDATE available (current:', currentVersion, '< latest:', versionData.latestVersion, ')');
     return { type: 'soft', data: versionData };
   }
 
   // Up to date
+  console.log('[VersionCheck] Result: APP IS UP TO DATE');
   return { type: 'none', data: versionData };
 };
 

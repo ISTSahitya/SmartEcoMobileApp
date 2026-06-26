@@ -39,6 +39,18 @@ const parseFeatures = (releaseNotes) => {
     return items.length ? items : DEFAULT_FEATURES;
   }
   if (typeof releaseNotes === 'string' && releaseNotes.trim()) {
+    // Try parsing as JSON array first (e.g. '["item1","item2"]')
+    if (releaseNotes.trim().startsWith('[')) {
+      try {
+        const parsed = JSON.parse(releaseNotes);
+        if (Array.isArray(parsed)) {
+          const items = parsed.map((s) => String(s).trim()).filter(Boolean);
+          return items.length ? items : DEFAULT_FEATURES;
+        }
+      } catch (e) {
+        // Not valid JSON, fall through to string splitting
+      }
+    }
     const items = releaseNotes
       .split(/\r?\n|•|·|;/)
       .map((s) => s.replace(/^[-*\s]+/, '').trim())
@@ -227,26 +239,13 @@ const UpdateModal = ({ visible, type, data, onDismiss, onSkipVersion }) => {
             </LinearGradient>
           </Pressable>
 
-          {/* Later / Skip */}
-          <View style={styles.secondaryActions}>
-            <Pressable
-              onPress={onDismiss}
-              style={({ pressed }) => [styles.secondaryBtn, { opacity: pressed ? 0.6 : 1 }]}
-            >
-              <Text style={styles.laterText}>Later</Text>
-            </Pressable>
-            {onSkipVersion ? (
-              <>
-                <View style={styles.dot} />
-                <Pressable
-                  onPress={onSkipVersion}
-                  style={({ pressed }) => [styles.secondaryBtn, { opacity: pressed ? 0.6 : 1 }]}
-                >
-                  <Text style={styles.skipText}>Skip This Version</Text>
-                </Pressable>
-              </>
-            ) : null}
-          </View>
+          {/* Later */}
+          <Pressable
+            onPress={onDismiss}
+            style={({ pressed }) => [styles.laterBtn, { opacity: pressed ? 0.6 : 1 }]}
+          >
+            <Text style={styles.laterText}>Later</Text>
+          </Pressable>
         </View>
       </ImageBackground>
     </Modal>
@@ -297,9 +296,9 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
   },
   iconWrap: {
-    width: 100,
-    height: 100,
-    borderRadius: '100%',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     marginBottom: 16,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
@@ -352,7 +351,7 @@ const styles = StyleSheet.create({
     fontFamily: FONT,
     fontSize: 13,
     fontWeight: '700',
-    color: '#0F796B',
+    color: '#363636',
   },
   detailsBox: {
     backgroundColor: '#FFFFFF33',
@@ -380,10 +379,12 @@ const styles = StyleSheet.create({
     marginBottom: 11,
   },
   checkCircle: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#D4F1E0',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: 'rgba(33, 124, 112, 1)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
@@ -391,10 +392,10 @@ const styles = StyleSheet.create({
   },
   checkMark: {
     fontFamily: FONT,
-    fontSize: 11,
+    fontSize: 8,
     fontWeight: '900',
-    color: '#0F796B',
-    lineHeight: 14,
+    color: 'rgba(33, 124, 112, 1)',
+    lineHeight: 10,
   },
   featureText: {
     flex: 1,
@@ -418,34 +419,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.3,
   },
-  secondaryActions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+  laterBtn: {
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 14,
-    gap: 12,
-  },
-  secondaryBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 4,
-  },
-  dot: {
-    width: 3,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#9BB3AB',
+    paddingVertical: 15,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#0F796B',
+    width: '100%',
   },
   laterText: {
     fontFamily: FONT,
     fontSize: 14,
     fontWeight: '600',
     color: '#0F796B',
-  },
-  skipText: {
-    fontFamily: FONT,
-    fontSize: 13,
-    fontWeight: '400',
-    color: '#8A9C95',
   },
   // ---------- Force update (bottom sheet) ----------
   forceOverlay: {

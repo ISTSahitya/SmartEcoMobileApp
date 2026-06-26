@@ -24,6 +24,7 @@ import RNPrint from 'react-native-print';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
 import useVersionCheck from '../../hooks/useVersionCheck';
 import UpdateModal from '../UpdateModal';
+import APP_CONFIG from '../../config/appConfig';
 
 const { VpnModule } = NativeModules;
 
@@ -1034,6 +1035,7 @@ const WebViewScreen = ({ route }) => {
         onError={() => setIsLoading(false)}
         onHttpError={() => setIsLoading(false)}
         injectedJavaScriptBeforeContentLoaded={`
+          window.NATIVE_APP_NAME = '${APP_CONFIG.APP_NAME}';
           document.documentElement.style.backgroundColor = '#fff';
           document.addEventListener('DOMContentLoaded', function() {
             document.body.style.backgroundColor = '#fff';
