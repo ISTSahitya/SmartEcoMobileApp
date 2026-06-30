@@ -8,6 +8,7 @@ import {
   StatusBar,
   View,
   Text,
+  TouchableOpacity,
   NativeModules,
   AppState,
   Animated,
@@ -33,6 +34,14 @@ const DEVICE_CONFIG_TIMEOUT_MS = 45000;
 const WEB_APP_URL = 'https://atlas.smartgeoapps.com/smartecodev/';
 // const WEB_APP_URL = 'https://app.smarteco.ai/smartecoiaq/';
 const { DeviceConfigModule, WifiConnectModule } = NativeModules;
+
+// Domains where the user is "stuck" on an external login page and needs a back control
+const OAUTH_HOSTS = [
+  'login.microsoftonline.com',
+  'login.live.com',
+  'facebook.com',
+  'accounts.google.com',
+];
 
 const injectedAutoZoomFix = `
   (function () {
@@ -67,10 +76,9 @@ const ONBOARDING_BASE_URI = `file://${DeviceConfigModule?.bundlePath ?? ''}/onbo
 
 const WebViewScreen = ({ route }) => {
   const insets = useSafeAreaInsets();
-  const [history, setHistory] = useState([]);
-  const [currentUrl, setCurrentUrl] = useState(null);
   const pendingIosDeviceConfigRef = useRef(null);
   const pendingIosWifiCheckRef = useRef(false);
+  const pendingDeviceWifiCheckRef = useRef(false);
   const appStateRef = useRef(AppState.currentState);
   const checkWifiConnectionRef = useRef(null);
   const provisionAttemptRef = useRef(0);
@@ -85,6 +93,8 @@ const WebViewScreen = ({ route }) => {
   };
 
   const [canGoBack, setCanGoBack] = useState(false);
+  const [showAuthHeader, setShowAuthHeader] = useState(false);
+  const canGoBackRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
   const splashOpacity = useRef(new Animated.Value(1)).current;
@@ -145,6 +155,20 @@ const WebViewScreen = ({ route }) => {
     return () => subscription.remove();
   }, []); // getConnectedWifiDetails only uses refs internally — no stale closure risk
 
+  // After user returns from WiFi settings, check device wifi is connected or not
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (nextAppState === 'active' && pendingDeviceWifiCheckRef.current) {
+        pendingDeviceWifiCheckRef.current = false;
+        // Small delay — iOS needs a moment to update the reported SSID
+        setTimeout(() => {
+          checkWifiConnection()
+        }, 1000);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+  
   const ensureProvisionAttempt = reason => {
     if (!provisionAttemptRef.current) {
       provisionAttemptRef.current = Date.now();
@@ -205,19 +229,8 @@ const WebViewScreen = ({ route }) => {
     const backHandler = BackHandler.addEventListener(
       'hardwareBackPress',
       () => {
-        if (history.length > 1) {
-          const prevUrl = history[history.length - 2];
-          // first goBack()
+        if (canGoBack) {
           webviewRef.current.goBack();
-
-          // 🔥 check after slight delay if URL is same
-          setTimeout(() => {
-            if (currentUrl === prevUrl) {
-              // If same URL → still same page → goBack() again
-              webviewRef.current.goBack();
-            }
-          }, 200);
-
           return true;
         }
         return false; // allow app exit
@@ -228,6 +241,39 @@ const WebViewScreen = ({ route }) => {
   }, [canGoBack]);
 
   const webviewRef = useRef(null);
+
+  // Pull the hostname out of a URL without relying on RN's URL.hostname getter,
+  // which isn't reliably implemented across platforms.
+  const getHost = url => {
+    if (typeof url !== 'string') return '';
+    const match = url.match(/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\/([^/?#]+)/);
+    if (!match) return '';
+    return match[1].split('@').pop().split(':')[0].toLowerCase();
+  };
+  const onNavStateChange = navState => {
+    canGoBackRef.current = navState.canGoBack;
+    setCanGoBack(navState.canGoBack);
+    const host = getHost(navState.url);
+    const isAuthHost = OAUTH_HOSTS.some(h => host === h || host.endsWith('.' + h));
+    setShowAuthHeader(isAuthHost);
+
+    // We're back on our own web app and have an OAuth result waiting — deliver it.
+    // Covers the case where goBack() restores from cache and onLoadEnd never fires.
+    if (!isAuthHost && pendingOAuthMessageRef.current) {
+      flushPendingOAuthMessage();
+    }
+  };
+  const handleBack = () => {
+    // User backed out of an external login page. We can't postMessage now —
+    // the WebView is still showing the OAuth provider's page, not our web app.
+    // Stash the cancellation and let the onLoadEnd flush deliver it once we've
+    // navigated back to our app (which has the message listener / loading popup).
+    pendingOAuthMessageRef.current = { type: 'OAUTH_CANCEL_ERROR', error: 'Login was cancelled' };
+    if (canGoBackRef.current) {
+      webviewRef.current?.goBack();
+    }
+  };
+
   const checkAndAskLocation = async () => {
     if (Platform.OS !== 'android') {
       return true;
@@ -384,6 +430,17 @@ const WebViewScreen = ({ route }) => {
       }
 
       switch (message.action) {
+        case 'APP_VERSION_INFO': {
+          // Backend version payload pushed by the web app:
+          // { latestVersion, minSupportedVersion, storeUrl, releaseNotes, isMaintenanceMode, size }
+          // Store it so the foreground re-check (AppState listener) has data,
+          // then run the version check now.
+          const versionPayload = message.payload || message.data || message;
+          lastVersionData.current = versionPayload;
+          handleVersionData(versionPayload);
+          break;
+        }
+
         case 'SCAN_WIFI':
           requestWifiScan();
           break;
@@ -442,24 +499,63 @@ const WebViewScreen = ({ route }) => {
                 offsetsCount: Array.isArray(pendingPayload.offsets) ? pendingPayload.offsets.length : undefined,
               });
             }
-            pendingIosWifiCheckRef.current = true;
+            pendingDeviceWifiCheckRef.current = true;
           }
 
           if (Platform.OS === 'android') {
             Linking.sendIntent('android.settings.WIFI_SETTINGS');
-
-            setTimeout(() => {
-              checkWifiConnection();
-            }, 6000);
           } else {
             Alert.alert('Enable Wi-Fi', 'Please enable Wi-Fi from Settings', [
-              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Cancel',
+                style: 'cancel',
+                onPress: () => {
+                  // User declined to open Wi-Fi settings — abort the pending
+                  // device-wifi check and tell the web app provisioning stopped.
+                  pendingDeviceWifiCheckRef.current = false;
+                  logProvisionStep('ios_open_wifi_settings_cancelled');
+                  sendToWeb({
+                    action: 'DEVICE_WIFI_CONNECTED',
+                    currentWifi: {
+                      ssid: 'No wifi connected',
+                    },
+                    success: false,
+                    error: 'Connection failed. Please try again...',
+                  });
+                },
+              },
               {
                 text: 'Open Settings',
                 onPress: () => {
                   logProvisionStep('ios_open_wifi_settings_requested');
                   Linking.openURL('App-Prefs:WIFI').catch(() => {
                     logProvisionStep('ios_open_wifi_settings_fallback_to_app_settings');
+                    Linking.openSettings();
+                  });
+                },
+              },
+            ]);
+          }
+
+          break;
+
+        case 'OPEN_WIFI_SETTINGS_FOR_IOS_WIFI_CHANGE':
+          // User is changing their own Wi-Fi (not device provisioning). On return
+          // we only need to re-report the new SSID to the web app via
+          // getConnectedWifiDetails() — no device-wifi connection check.
+          if (Platform.OS === 'ios') {
+            pendingIosWifiCheckRef.current = true;
+            logProvisionStep('ios_open_wifi_settings_for_wifi_change', {
+              platform: Platform.OS,
+            });
+            Alert.alert('Change Wi-Fi', 'Please change your Wi-Fi from Settings', [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Open Settings',
+                onPress: () => {
+                  logProvisionStep('ios_open_wifi_settings_for_wifi_change_requested');
+                  Linking.openURL('App-Prefs:WIFI').catch(() => {
+                    logProvisionStep('ios_open_wifi_settings_for_wifi_change_fallback_to_app_settings');
                     Linking.openSettings();
                   });
                 },
@@ -669,62 +765,44 @@ const WebViewScreen = ({ route }) => {
         hasToken: Boolean(data.access_token),
         error: data.error,
       });
-
-      const injectOAuthMessage = delayMs => {
-        const script = `
-          (function () {
-            var message = ${JSON.stringify(message)};
-            var parsed = null;
-            try {
-              parsed = JSON.parse(message);
-            } catch (error) {}
-
-            try {
-              window.__SMART_ECO_OAUTH_RESULT__ = parsed || message;
-            } catch (error) {}
-
-            try {
-              window.localStorage.setItem('SMART_ECO_OAUTH_RESULT', message);
-              window.localStorage.setItem('oauth_result', message);
-            } catch (error) {}
-
-            try {
-              window.dispatchEvent(new MessageEvent('message', { data: message }));
-            } catch (error) {}
-
-            try {
-              document.dispatchEvent(new MessageEvent('message', { data: message }));
-            } catch (error) {}
-
-            try {
-              window.dispatchEvent(new CustomEvent('OAUTH_SUCCESS', { detail: parsed || message }));
-            } catch (error) {}
-
-            try {
-              window.dispatchEvent(new CustomEvent('SMART_ECO_OAUTH_RESULT', { detail: parsed || message }));
-            } catch (error) {}
-
-            true;
-          })();
-        `;
-        webviewRef.current?.injectJavaScript(script);
-        console.log('[OAuth]', 'message_injected_to_webview', { delayMs, type: data.type });
-      };
-
-      injectOAuthMessage(0);
-
-      setTimeout(() => {
-        webviewRef.current?.postMessage(message);
-        console.log('[OAuth]', 'message_retry_to_webview', { delayMs: 500, type: data.type });
-        injectOAuthMessage(500);
-      }, 500);
-
-      setTimeout(() => {
-        webviewRef.current?.postMessage(message);
-        console.log('[OAuth]', 'message_retry_to_webview', { delayMs: 1500, type: data.type });
-        injectOAuthMessage(1500);
-      }, 1500);
     }
+  };
+
+  // Deliver a stashed OAuth result once a page has finished loading. Used when
+  // the message couldn't be delivered at the time it arrived — e.g. the user
+  // tapped Back on an external OAuth page, so we had to wait until our own web
+  // app was loaded again before posting it.
+  const flushPendingOAuthMessage = () => {
+    const data = pendingOAuthMessageRef.current;
+    if (!data) return;
+    pendingOAuthMessageRef.current = null;
+
+    const message = JSON.stringify(data);
+    console.log('[OAuth]', 'message_flushed_after_load', {
+      type: data.type,
+      hasCode: Boolean(data.code),
+      hasToken: Boolean(data.access_token),
+      error: data.error,
+    });
+
+    webviewRef.current?.postMessage(message);
+    webviewRef.current?.injectJavaScript(`
+      (function () {
+        var message = ${JSON.stringify(message)};
+        var parsed = null;
+        try { parsed = JSON.parse(message); } catch (error) {}
+        try {
+          window.__SMART_ECO_OAUTH_RESULT__ = parsed || message;
+          window.localStorage.setItem('SMART_ECO_OAUTH_RESULT', message);
+          window.localStorage.setItem('oauth_result', message);
+          window.dispatchEvent(new MessageEvent('message', { data: message }));
+          document.dispatchEvent(new MessageEvent('message', { data: message }));
+          window.dispatchEvent(new CustomEvent(${JSON.stringify(data.type)}, { detail: parsed || message }));
+          window.dispatchEvent(new CustomEvent('SMART_ECO_OAUTH_RESULT', { detail: parsed || message }));
+        } catch (error) {}
+        true;
+      })();
+    `);
   };
 
   // Get current connected wifi details
@@ -1024,7 +1102,7 @@ const WebViewScreen = ({ route }) => {
               disconnected,
             });
             if (disconnected) break;
-            await WifiConnectModule.disconnectFromNetwork(currentSsid);
+            // await WifiConnectModule.disconnectFromNetwork(currentSsid);
           }
           logProvisionStep('ios_disconnected_device_wifi', { ssid: currentSsid, verified: disconnected });
         }
@@ -1581,6 +1659,13 @@ const WebViewScreen = ({ route }) => {
         backgroundColor="transparent"
         translucent={true}
       />
+      {showAuthHeader && (
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBack} style={styles.backBtnHit}>
+            <Text style={styles.backBtn}>← Back</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       <WebView
         ref={webviewRef}
         mixedContentMode="always"
@@ -1593,47 +1678,9 @@ const WebViewScreen = ({ route }) => {
         contentInsetAdjustmentBehavior="never"
         onLoadEnd={() => {
           setIsLoading(false);
-          if (pendingOAuthMessageRef.current) {
-            const oauthMessage = pendingOAuthMessageRef.current;
-            const message = JSON.stringify(oauthMessage);
-            console.log('[OAuth]', 'message_flushed_after_load', {
-              type: oauthMessage.type,
-              hasCode: Boolean(oauthMessage.code),
-              hasToken: Boolean(oauthMessage.access_token),
-              error: oauthMessage.error,
-            });
-            webviewRef.current?.postMessage(message);
-            webviewRef.current?.injectJavaScript(`
-              (function () {
-                var message = ${JSON.stringify(message)};
-                var parsed = null;
-                try {
-                  parsed = JSON.parse(message);
-                } catch (error) {}
-                try {
-                  window.__SMART_ECO_OAUTH_RESULT__ = parsed || message;
-                  window.localStorage.setItem('SMART_ECO_OAUTH_RESULT', message);
-                  window.localStorage.setItem('oauth_result', message);
-                  window.dispatchEvent(new MessageEvent('message', { data: message }));
-                  document.dispatchEvent(new MessageEvent('message', { data: message }));
-                  window.dispatchEvent(new CustomEvent('OAUTH_SUCCESS', { detail: parsed || message }));
-                  window.dispatchEvent(new CustomEvent('SMART_ECO_OAUTH_RESULT', { detail: parsed || message }));
-                } catch (error) {}
-                true;
-              })();
-            `);
-          }
+          flushPendingOAuthMessage();
         }}
-        onNavigationStateChange={navState => {
-          const url = navState.url;
-          setCurrentUrl(url);
-          setHistory(prev => {
-            if (prev[prev.length - 1] !== url) {
-              return [...prev, url];
-            }
-            return prev;
-          });
-        }}
+        onNavigationStateChange={onNavStateChange}
        
         // onError={(e) => {
         //   console.log("WEBVIEW ERROR", e.nativeEvent);
@@ -1681,6 +1728,24 @@ const styles = StyleSheet.create({
   },
   webview: {
     flex: 1,
+  },
+  header: {
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    backgroundColor: '#fff',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
+  },
+  backBtnHit: {
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+  },
+  backBtn: {
+    fontSize: 16,
+    color: '#0F796B',
+    fontWeight: '600',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,

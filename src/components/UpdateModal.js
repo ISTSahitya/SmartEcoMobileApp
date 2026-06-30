@@ -9,6 +9,7 @@ import {
   ScrollView,
   Image,
   ImageBackground,
+  Platform,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 
@@ -20,8 +21,12 @@ const SOFT_BG_IMG = require('../assets/images/SoftUpdateBackground.png');
 
 const FONT = 'DM Sans';
 
-const DEFAULT_STORE_URL =
+const PLAY_STORE_URL =
   'https://play.google.com/store/apps/details?id=com.smarteco.app';
+const APP_STORE_URL =
+  'https://apps.apple.com/in/app/smarteco/id6757154742';
+// Platform-aware fallback so iOS users are never sent to the Play Store.
+const DEFAULT_STORE_URL = Platform.OS === 'ios' ? APP_STORE_URL : PLAY_STORE_URL;
 
 // Fallback feature list shown when the backend doesn't supply release notes.
 const DEFAULT_FEATURES = [
@@ -55,7 +60,7 @@ const UpdateModal = ({ visible, type, data, onDismiss, onSkipVersion }) => {
   const handleUpdate = () => {
     const url = data?.storeUrl || DEFAULT_STORE_URL;
     Linking.openURL(url).catch(() => {
-      Linking.openURL('https://play.google.com/store');
+      Linking.openURL(DEFAULT_STORE_URL);
     });
   };
 
@@ -299,7 +304,7 @@ const styles = StyleSheet.create({
   iconWrap: {
     width: 100,
     height: 100,
-    borderRadius: '100%',
+    borderRadius: 50,
     marginBottom: 16,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
@@ -416,7 +421,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '700',
+    lineHeight: 20,
     letterSpacing: 0.3,
+    textAlign: 'center',
   },
   secondaryActions: {
     flexDirection: 'row',
