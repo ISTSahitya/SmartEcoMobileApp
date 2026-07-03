@@ -15,7 +15,7 @@ const UpdateModal = ({ visible, type, data, onDismiss, onSkipVersion }) => {
   const isMaintenance = type === 'maintenance';
 
   const handleUpdate = () => {
-    const url = data?.storeUrl || 'https://play.google.com/store/apps/details?id=com.smarteco.app';
+    const url = data?.storeUrl || 'https://play.google.com/store/apps/details?id=com.smartecoenterprise.app';
     Linking.openURL(url).catch(() => {
       Linking.openURL('https://play.google.com/store');
     });

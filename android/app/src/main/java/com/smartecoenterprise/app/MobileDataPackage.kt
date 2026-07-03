@@ -1,4 +1,4 @@
-package com.smarteco.app
+package com.smartecoenterprise.app
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.ReactApplicationContext

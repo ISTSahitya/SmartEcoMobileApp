@@ -77,13 +77,13 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.smarteco.app"
+    namespace "com.smartecoenterprise.app"
     defaultConfig {
-        applicationId "com.smarteco.app"
+        applicationId "com.smartecoenterprise.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 19
-        versionName "19.0.0"
+        versionCode 1
+        versionName "1.0.0"
     }
     signingConfigs {
         debug {

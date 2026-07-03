@@ -1,4 +1,4 @@
-package com.smarteco.app
+package com.smartecoenterprise.app
 
 import android.app.Application
 import com.facebook.react.PackageList
