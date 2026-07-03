@@ -22,8 +22,10 @@ import ReactNativeBlobUtil from 'react-native-blob-util';
 import Share from 'react-native-share';
 import RNPrint from 'react-native-print';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
+import NetInfo from '@react-native-community/netinfo';
 import useVersionCheck from '../../hooks/useVersionCheck';
 import UpdateModal from '../UpdateModal';
+import OfflineScreen from '../OfflineScreen';
 import APP_CONFIG from '../../config/appConfig';
 
 const { VpnModule } = NativeModules;
@@ -36,6 +38,8 @@ const WebViewScreen = ({ route }) => {
   const [canGoBack, setCanGoBack] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
+  const [isOffline, setIsOffline] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
   const splashOpacity = useRef(new Animated.Value(1)).current;
   const {
     modalVisible,
@@ -48,7 +52,7 @@ const WebViewScreen = ({ route }) => {
   const lastVersionData = useRef(null);
 
   const splashOnly = route.params?.splashOnly ?? false;
-  const splashUri = splashOnly
+  const splashUri = (splashOnly || isRetrying)
     ? `${ONBOARDING_BASE_URI}?splashOnly=true`
     : ONBOARDING_BASE_URI;
 
@@ -68,6 +72,60 @@ const WebViewScreen = ({ route }) => {
       }
     } catch (_) {}
   }, [splashOnly, splashOpacity]);
+
+  // One-time internet check when the app opens (mirrors the update-modal
+  // pattern — checked once, not continuously watched).
+  const checkInternetConnection = useCallback(async () => {
+    try {
+      const state = await NetInfo.fetch();
+      const online = !!(state.isConnected && state.isInternetReachable !== false);
+      setIsOffline(!online);
+      return online;
+    } catch (_) {
+      // On an unexpected NetInfo error, don't block the user — assume online.
+      setIsOffline(false);
+      return true;
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      checkInternetConnection();
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [checkInternetConnection]);
+
+  const handleTryAgain = useCallback(async () => {
+    // Show the splash as a "reconnecting" screen so the retry doesn't feel
+    // abrupt. splashUri switches to splash-only while isRetrying is true,
+    // so the full onboarding flow is not replayed.
+    splashOpacity.setValue(1);
+    setIsRetrying(true);
+    setShowSplash(true);
+    setIsOffline(false);
+
+    // Keep the splash on screen for a short beat, then re-check connectivity.
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    const online = await checkInternetConnection();
+
+    if (online) {
+      // Back online — reload the web app behind the splash, then fade it out.
+      webviewRef.current?.reload();
+      Animated.timing(splashOpacity, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(() => {
+        setShowSplash(false);
+        setIsRetrying(false);
+      });
+    } else {
+      // Still offline — drop the splash so the offline screen shows again.
+      // checkInternetConnection already set isOffline(true).
+      setShowSplash(false);
+      setIsRetrying(false);
+    }
+  }, [checkInternetConnection, splashOpacity]);
 
   // Re-check version when app comes to foreground
   useEffect(() => {
@@ -1085,6 +1143,12 @@ const WebViewScreen = ({ route }) => {
         onDismiss={dismiss}
         onSkipVersion={skipVersion}
       />
+      {isOffline && (
+        <OfflineScreen
+          onRetry={handleTryAgain}
+          topInset={insets.top}
+        />
+      )}
     </View>
   );
 };
