@@ -35,6 +35,9 @@ local.properties
 !debug.keystore
 .kotlin/
 
+# Release signing credentials - never commit
+keystore.properties
+
 # node.js
 #
 node_modules/
