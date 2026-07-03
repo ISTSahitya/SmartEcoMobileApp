@@ -24,6 +24,7 @@ import RNPrint from 'react-native-print';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
 import useVersionCheck from '../../hooks/useVersionCheck';
 import UpdateModal from '../UpdateModal';
+import { ONBOARDING_BASE_URI, ONBOARDING_READ_ACCESS } from '../../utils/onboarding';
 import {
   scanForDevices,
   connectToDevice,
@@ -32,8 +33,6 @@ import {
 } from '../../services/bleProvisioning';
 
 const { VpnModule } = NativeModules;
-
-const ONBOARDING_BASE_URI = 'file:///android_asset/onboarding/index.html';
 
 const WebViewScreen = ({ route }) => {
   const insets = useSafeAreaInsets();
@@ -864,6 +863,7 @@ const WebViewScreen = ({ route }) => {
             javaScriptEnabled
             domStorageEnabled
             allowFileAccess
+            allowingReadAccessToURL={ONBOARDING_READ_ACCESS}
             onMessage={handleSplashMessage}
             originWhitelist={['*']}
           />

@@ -2,9 +2,9 @@ import React, { useRef, useEffect } from "react";
 import { View, StyleSheet, StatusBar } from "react-native";
 import WebView from "react-native-webview";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { ONBOARDING_BASE_URI, ONBOARDING_READ_ACCESS } from "../../utils/onboarding";
 
-// Loads from bundled Android assets — no server needed
-const ONBOARDING_BASE_URI = "file:///android_asset/onboarding/index.html";
+// Loads from bundled assets — no server needed (Android asset dir / iOS bundle)
 
 export default function OnboardingWebViewScreen({ navigation, route }) {
   const splashOnly = route.params?.splashOnly ?? false;
@@ -40,6 +40,7 @@ export default function OnboardingWebViewScreen({ navigation, route }) {
         javaScriptEnabled
         domStorageEnabled
         allowFileAccess
+        allowingReadAccessToURL={ONBOARDING_READ_ACCESS}
         onMessage={handleMessage}
         originWhitelist={["*"]}
       />
