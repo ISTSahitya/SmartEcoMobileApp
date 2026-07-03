@@ -27,6 +27,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import useVersionCheck from '../../hooks/useVersionCheck';
 import UpdateModal from '../UpdateModal';
+import OfflineScreen from '../OfflineScreen';
 //import { check, request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 
 const DEVICE_CONFIG_URL = 'http://192.168.4.1/wifi';
@@ -97,6 +98,8 @@ const WebViewScreen = ({ route }) => {
   const canGoBackRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
+  const [isOffline, setIsOffline] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
   const splashOpacity = useRef(new Animated.Value(1)).current;
   const {
     modalVisible,
@@ -111,7 +114,7 @@ const WebViewScreen = ({ route }) => {
   const splashOnly = route.params?.splashOnly ?? false;
 
   const splashSource = {
-    uri: splashOnly ? `${ONBOARDING_BASE_URI}?splashOnly=true` : ONBOARDING_BASE_URI,
+    uri: (splashOnly || isRetrying) ? `${ONBOARDING_BASE_URI}?splashOnly=true` : ONBOARDING_BASE_URI,
   };
 
   // When the HTML splash sends ONBOARDING_DONE, fade it out
@@ -130,6 +133,61 @@ const WebViewScreen = ({ route }) => {
       }
     } catch (_) {}
   }, [splashOnly, splashOpacity]);
+
+  // One-time internet check when the app opens (mirrors the update-modal
+  // pattern — checked once, not continuously watched).
+  const checkInternetConnection = useCallback(async () => {
+    try {
+      const state = await NetInfo.fetch();
+      console.log(state, "Internet status");
+      const online = !!(state.isConnected && state.isInternetReachable);
+      setIsOffline(!online);
+      return online;
+    } catch (_) {
+      // On an unexpected NetInfo error, don't block the user — assume online.
+      setIsOffline(false);
+      return true;
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      checkInternetConnection();
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [checkInternetConnection]);
+
+  const handleTryAgain = useCallback(async () => {
+    // Show the splash as a "reconnecting" screen so the retry doesn't feel
+    // abrupt. splashSource switches to splash-only while isRetrying is true,
+    // so the full onboarding flow is not replayed.
+    splashOpacity.setValue(1);
+    setIsRetrying(true);
+    setShowSplash(true);
+    setIsOffline(false);
+
+    // Keep the splash on screen for a short beat, then re-check connectivity.
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    const online = await checkInternetConnection();
+
+    if (online) {
+      // Back online — reload the web app behind the splash, then fade it out.
+      webviewRef.current?.reload();
+      Animated.timing(splashOpacity, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(() => {
+        setShowSplash(false);
+        setIsRetrying(false);
+      });
+    } else {
+      // Still offline — drop the splash so the offline screen shows again.
+      // checkInternetConnection already set isOffline(true).
+      setShowSplash(false);
+      setIsRetrying(false);
+    }
+  }, [checkInternetConnection, splashOpacity]);
 
   // Re-check version when app comes to foreground
   useEffect(() => {
@@ -399,6 +457,7 @@ const WebViewScreen = ({ route }) => {
       if (
         message.action === 'OPEN_WIFI_SETTINGS' ||
         message.action === 'OPEN_WIFI_SETTINGS_FOR_NO_INTERNET' ||
+        message.action === 'OPEN_WIFI_SETTINGS_FOR_IOS_WIFI_CHANGE' ||
         message.action === 'SEND_WIFI_CREDENTIALS' ||
         message.action === 'SEND_WIFI_DETAILS_TO_DEVICE' ||
         message.action === 'SCAN_WIFI' ||
@@ -1016,103 +1075,107 @@ const WebViewScreen = ({ route }) => {
   const releaseWifiBinding = async ({ ssid, password } = {}) => {
     logProvisionStep('release_wifi_binding_received', { ssid });
 
-    // Only act if the phone is currently on a device (IAQ_/IAM_) network.
-    // If iOS already auto-switched to home WiFi, there is nothing to release.
-    const currentSsidBeforeRelease = await WifiManager.getCurrentWifiSSID().catch(() => null);
-    if (!isDeviceWifiSsid(currentSsidBeforeRelease)) {
-      logProvisionStep('release_wifi_binding_skipped_not_on_device_wifi', { currentSsid: currentSsidBeforeRelease });
-      sendToWeb({ action: 'WIFI_BINDING_RELEASED' });
-      return;
-    }
-
-    if (WifiConnectModule?.connectToHomeNetwork && ssid && password) {
-      try {
-        logProvisionStep('ios_reconnecting_to_home_wifi', { ssid });
-        await WifiConnectModule.connectToHomeNetwork(ssid, password);
-
-        // NEHotspotConfiguration fires the callback before the wifi switch
-        // completes — poll for up to 10s to confirm actual connection.
-        let connected = false;
-        for (let i = 0; i < 5; i++) {
-          await new Promise(r => setTimeout(r, 2000));
-          const currentSsid = await WifiManager.getCurrentWifiSSID().catch(() => null);
-          connected = !!(currentSsid && currentSsid === ssid);
-          logProvisionStep('ios_reconnect_home_wifi_poll', {
-            check: i + 1,
-            targetSsid: ssid,
-            currentSsid,
-            connected,
-          });
-          if (connected) break;
-        }
-
-        if (!connected) {
-          logProvisionStep('ios_reconnect_home_wifi_poll_failed', { ssid });
-
-          const userChoice = await new Promise(resolve => {
-            Alert.alert(
-              'Home Wi-Fi Reconnection Failed',
-              `Unable to reconnect to "${ssid}". Would you like to try again?`,
-              [
-                { text: 'Skip', style: 'cancel', onPress: () => resolve('skip') },
-                { text: 'Reconnect', onPress: () => resolve('reconnect') },
-              ],
-            );
-          });
-
-          logProvisionStep('ios_reconnect_home_wifi_alert_choice', { ssid, userChoice });
-
-          if (userChoice === 'reconnect') {
-            try {
-              logProvisionStep('ios_reconnect_home_wifi_retry', { ssid });
-              await WifiConnectModule.connectToHomeNetwork(ssid, password);
-              logProvisionStep('ios_reconnect_home_wifi_retry_called', { ssid });
-            } catch (retryErr) {
-              const userDenied = retryErr?.code === 'wifi_connect_home_user_denied';
-              logProvisionStep('ios_reconnect_home_wifi_retry_failed', {
-                ssid,
-                userDenied,
-                error: retryErr?.toString?.(),
-              });
-            }
-          }
-        }
-
-        logProvisionStep('ios_reconnected_to_home_wifi', { ssid, verified: connected });
-      } catch (e) {
-        logProvisionStep('ios_reconnect_to_home_wifi_failed', { error: e?.toString?.() });
+    try {
+      // Only act if the phone is currently on a device (IAQ_/IAM_) network.
+      // If iOS already auto-switched to home WiFi, there is nothing to release.
+      const currentSsidBeforeRelease = await WifiManager.getCurrentWifiSSID().catch(() => null);
+      if (!isDeviceWifiSsid(currentSsidBeforeRelease)) {
+        logProvisionStep('release_wifi_binding_skipped_not_on_device_wifi', { currentSsid: currentSsidBeforeRelease });
+        return;
       }
-    } else {
-      // No home wifi credentials — remove the NEHotspotConfiguration so iOS
-      // won't auto-rejoin. The active association drops when the IAQ device
-      // reboots after provisioning; iOS has no public API to force disconnect.
-      try {
-        const currentSsid = await WifiManager.getCurrentWifiSSID().catch(() => null);
-        if (currentSsid) {
-          await WifiConnectModule.disconnectFromNetwork(currentSsid);
-          let disconnected = false;
+
+      if (WifiConnectModule?.connectToHomeNetwork && ssid && password) {
+        try {
+          logProvisionStep('ios_reconnecting_to_home_wifi', { ssid });
+          await WifiConnectModule.connectToHomeNetwork(ssid, password);
+
+          // NEHotspotConfiguration fires the callback before the wifi switch
+          // completes — poll for up to 10s to confirm actual connection.
+          let connected = false;
           for (let i = 0; i < 5; i++) {
             await new Promise(r => setTimeout(r, 2000));
-            const ssidAfter = await WifiManager.getCurrentWifiSSID().catch(() => null);
-            disconnected = !ssidAfter || ssidAfter !== currentSsid;
-            logProvisionStep('ios_disconnect_poll', {
+            const currentSsid = await WifiManager.getCurrentWifiSSID().catch(() => null);
+            connected = !!(currentSsid && currentSsid === ssid);
+            logProvisionStep('ios_reconnect_home_wifi_poll', {
               check: i + 1,
+              targetSsid: ssid,
               currentSsid,
-              ssidAfter,
-              disconnected,
+              connected,
             });
-            if (disconnected) break;
-            // await WifiConnectModule.disconnectFromNetwork(currentSsid);
+            if (connected) break;
           }
-          logProvisionStep('ios_disconnected_device_wifi', { ssid: currentSsid, verified: disconnected });
+
+          if (!connected) {
+            logProvisionStep('ios_reconnect_home_wifi_poll_failed', { ssid });
+
+            const userChoice = await new Promise(resolve => {
+              Alert.alert(
+                'Home Wi-Fi Reconnection Failed',
+                `Unable to reconnect to "${ssid}". Would you like to try again?`,
+                [
+                  { text: 'Skip', style: 'cancel', onPress: () => resolve('skip') },
+                  { text: 'Reconnect', onPress: () => resolve('reconnect') },
+                ],
+              );
+            });
+
+            logProvisionStep('ios_reconnect_home_wifi_alert_choice', { ssid, userChoice });
+
+            if (userChoice === 'reconnect') {
+              try {
+                logProvisionStep('ios_reconnect_home_wifi_retry', { ssid });
+                await WifiConnectModule.connectToHomeNetwork(ssid, password);
+                logProvisionStep('ios_reconnect_home_wifi_retry_called', { ssid });
+              } catch (retryErr) {
+                const userDenied = retryErr?.code === 'wifi_connect_home_user_denied';
+                logProvisionStep('ios_reconnect_home_wifi_retry_failed', {
+                  ssid,
+                  userDenied,
+                  error: retryErr?.toString?.(),
+                });
+              }
+            }
+          }
+
+          logProvisionStep('ios_reconnected_to_home_wifi', { ssid, verified: connected });
+        } catch (e) {
+          logProvisionStep('ios_reconnect_to_home_wifi_failed', { error: e?.toString?.() });
         }
-      } catch (e) {
-        logProvisionStep('ios_disconnect_device_wifi_failed', { error: e?.toString?.() });
+      } else {
+        // No home wifi credentials — remove the NEHotspotConfiguration so iOS
+        // won't auto-rejoin. The active association drops when the IAQ device
+        // reboots after provisioning; iOS has no public API to force disconnect.
+        try {
+          const currentSsid = await WifiManager.getCurrentWifiSSID().catch(() => null);
+          if (currentSsid) {
+            await WifiConnectModule.disconnectFromNetwork(currentSsid);
+            let disconnected = false;
+            for (let i = 0; i < 5; i++) {
+              await new Promise(r => setTimeout(r, 2000));
+              const ssidAfter = await WifiManager.getCurrentWifiSSID().catch(() => null);
+              disconnected = !ssidAfter || ssidAfter !== currentSsid;
+              logProvisionStep('ios_disconnect_poll', {
+                check: i + 1,
+                currentSsid,
+                ssidAfter,
+                disconnected,
+              });
+              if (disconnected) break;
+              // await WifiConnectModule.disconnectFromNetwork(currentSsid);
+            }
+            logProvisionStep('ios_disconnected_device_wifi', { ssid: currentSsid, verified: disconnected });
+          }
+        } catch (e) {
+          logProvisionStep('ios_disconnect_device_wifi_failed', { error: e?.toString?.() });
+        }
       }
+    } finally {
+      // Always notify the web layer that the binding is released, no matter
+      // how the flow above ended (user denied reconnect, disconnect failed,
+      // early skip, or an unexpected throw). Otherwise the web side hangs.
+      logProvisionStep('wifi_binding_released_sent', { ssid });
+      sendToWeb({ action: 'WIFI_BINDING_RELEASED' });
     }
-
-    sendToWeb({ action: 'WIFI_BINDING_RELEASED' });
-
   };
 
   const sendWifiCredentials = async (payload) => {
@@ -1717,6 +1780,12 @@ const WebViewScreen = ({ route }) => {
         onDismiss={dismiss}
         onSkipVersion={skipVersion}
       />
+      {isOffline && (
+        <OfflineScreen
+          onRetry={handleTryAgain}
+          topInset={insets.top}
+        />
+      )}
     </View>
   );
 };
