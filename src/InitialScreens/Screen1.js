@@ -18,7 +18,7 @@ function Screen1({ navigation }) {
       <SafeAreaView style={InitialScreensStyles.safeArea} edges={['top', 'bottom']}>
 
         <View style={InitialScreensStyles.header}>
-          <Text style={InitialScreensStyles.pageHeading}>Welcome to SmartEco!</Text>
+          <Text style={InitialScreensStyles.pageHeading}>Welcome to SmartEco Enterprise!</Text>
           <Text style={InitialScreensStyles.pageDescription}>Your all-in-one platform to monitor, control, and optimize your smart devices.</Text>
         </View>
 

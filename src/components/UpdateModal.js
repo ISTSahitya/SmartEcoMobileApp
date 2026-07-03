@@ -30,8 +30,8 @@ const UpdateModal = ({ visible, type, data, onDismiss, onSkipVersion }) => {
   const message = isMaintenance
     ? 'We are performing scheduled maintenance to improve your experience. Please check back shortly.'
     : isForce
-      ? 'This version is no longer supported.\nPlease update to continue using SmartEco.'
-      : 'A newer version of SmartEco is available.\nUpdate now for the best experience.';
+      ? 'This version is no longer supported.\nPlease update to continue using SmartEco Enterprise.'
+      : 'A newer version of SmartEco Enterprise is available.\nUpdate now for the best experience.';
 
   return (
     <Modal

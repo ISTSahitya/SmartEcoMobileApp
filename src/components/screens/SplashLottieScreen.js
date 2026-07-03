@@ -83,7 +83,7 @@ export default function SplashLottieScreen({ navigation }) {
                         },
                     ]}
                 >
-                    SmartEco
+                    SmartEco Enterprise
                 </Animated.Text>
             </ImageBackground>
         </View>

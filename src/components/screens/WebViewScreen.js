@@ -588,7 +588,7 @@ const WebViewScreen = ({ route }) => {
         PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
         {
           title: 'Storage Permission',
-          message: 'SmartEco needs storage access to save downloaded files.',
+          message: 'SmartEco Enterprise needs storage access to save downloaded files.',
           buttonPositive: 'OK',
           buttonNegative: 'Cancel',
         },
@@ -825,7 +825,7 @@ const WebViewScreen = ({ route }) => {
         renderLoading={() => (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="small" color="#0F796B" />
-            <Text style={styles.loadingText}>Loading SmartEco...</Text>
+            <Text style={styles.loadingText}>Loading SmartEco Enterprise...</Text>
           </View>
         )}
         onLoadEnd={async () => {
@@ -853,7 +853,7 @@ const WebViewScreen = ({ route }) => {
       {isLoading && !showSplash && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="small" color="#0F796B" />
-          <Text style={styles.loadingText}>Loading SmartEco...</Text>
+          <Text style={styles.loadingText}>Loading SmartEco Enterprise...</Text>
         </View>
       )}
       {showSplash && (

@@ -72,7 +72,7 @@ export default function StepText() {
           transform: [{ translateY: textSlide }],
         }}
       >
-        SmartEco
+        SmartEco Enterprise
       </Animated.Text>
     </ImageBackground>
   );
