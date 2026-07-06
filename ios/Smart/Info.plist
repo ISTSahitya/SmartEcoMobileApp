@@ -50,6 +50,10 @@
 	<string>SmartEco Enterprise uses the local network to connect to and configure your SmartEco devices.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SmartEco Enterprise uses your location to scan for nearby Wi-Fi networks while setting up your device.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>SmartEco Enterprise saves images such as device QR codes to your photo library when you choose to save them.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SmartEco Enterprise needs access to your photo library so you can save and share images such as device QR codes.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
