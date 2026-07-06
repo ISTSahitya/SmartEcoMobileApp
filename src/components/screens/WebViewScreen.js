@@ -39,7 +39,8 @@ const WebViewScreen = ({ route }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
-  const [isRetrying, setIsRetrying] = useState(false);
+  const [webviewKey, setWebviewKey] = useState(0);
+  const isDeviceOnboarding = useRef(false);
   const splashOpacity = useRef(new Animated.Value(1)).current;
   const {
     modalVisible,
@@ -52,7 +53,7 @@ const WebViewScreen = ({ route }) => {
   const lastVersionData = useRef(null);
 
   const splashOnly = route.params?.splashOnly ?? false;
-  const splashUri = (splashOnly || isRetrying)
+  const splashUri = splashOnly
     ? `${ONBOARDING_BASE_URI}?splashOnly=true`
     : ONBOARDING_BASE_URI;
 
@@ -73,59 +74,66 @@ const WebViewScreen = ({ route }) => {
     } catch (_) {}
   }, [splashOnly, splashOpacity]);
 
-  // One-time internet check when the app opens (mirrors the update-modal
-  // pattern — checked once, not continuously watched).
+  // Check internet once (used by retry logic).
+  // Does NOT update isOffline — callers decide when to show/hide the overlay.
   const checkInternetConnection = useCallback(async () => {
     try {
       const state = await NetInfo.fetch();
-      const online = !!(state.isConnected && state.isInternetReachable !== false);
-      setIsOffline(!online);
-      return online;
+      return !!(state.isConnected && state.isInternetReachable !== false);
     } catch (_) {
-      // On an unexpected NetInfo error, don't block the user — assume online.
-      setIsOffline(false);
       return true;
     }
   }, []);
 
+  // Monitor connectivity — only used to *show* the offline screen.
+  // Recovery is intentionally manual (Try Again button) to avoid
+  // blank-page flashes from premature WebView reloads.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      checkInternetConnection();
-    }, 1200);
-    return () => clearTimeout(timer);
-  }, [checkInternetConnection]);
+    let offlineTimer = null;
+
+    const unsubscribe = NetInfo.addEventListener(state => {
+      const online = !!(state.isConnected && state.isInternetReachable === true);
+
+      if (offlineTimer) { clearTimeout(offlineTimer); offlineTimer = null; }
+
+      if (!online && !isDeviceOnboarding.current) {
+        // Debounce going offline to ignore transient drops.
+        offlineTimer = setTimeout(() => {
+          offlineTimer = null;
+          if (!isDeviceOnboarding.current) {
+            setIsOffline(true);
+          }
+        }, 1500);
+      }
+      // Do NOT auto-recover — user taps "Try Again" when ready.
+    });
+
+    return () => {
+      unsubscribe();
+      if (offlineTimer) clearTimeout(offlineTimer);
+    };
+  }, []);
 
   const handleTryAgain = useCallback(async () => {
-    // Show the splash as a "reconnecting" screen so the retry doesn't feel
-    // abrupt. splashUri switches to splash-only while isRetrying is true,
-    // so the full onboarding flow is not replayed.
-    splashOpacity.setValue(1);
-    setIsRetrying(true);
-    setShowSplash(true);
-    setIsOffline(false);
+    let online = await checkInternetConnection();
 
-    // Keep the splash on screen for a short beat, then re-check connectivity.
-    await new Promise(resolve => setTimeout(resolve, 1200));
-    const online = await checkInternetConnection();
+    // isInternetReachable can briefly be null right after reconnection.
+    // Wait a moment and retry once before giving up.
+    if (!online) {
+      await new Promise(r => setTimeout(r, 2000));
+      online = await checkInternetConnection();
+    }
 
     if (online) {
-      // Back online — reload the web app behind the splash, then fade it out.
-      webviewRef.current?.reload();
-      Animated.timing(splashOpacity, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(() => {
-        setShowSplash(false);
-        setIsRetrying(false);
-      });
-    } else {
-      // Still offline — drop the splash so the offline screen shows again.
-      // checkInternetConnection already set isOffline(true).
-      setShowSplash(false);
-      setIsRetrying(false);
+      // Remount the WebView completely. reload() on Android with hardware layer
+      // causes blank screen on many devices because the cached rendering surface
+      // is not properly invalidated. A fresh key forces a new WebView instance.
+      setIsOffline(false);
+      setIsLoading(true);
+      setWebviewKey(k => k + 1);
     }
-  }, [checkInternetConnection, splashOpacity]);
+    // If still offline, the overlay stays visible — user can tap again.
+  }, [checkInternetConnection]);
 
   // Re-check version when app comes to foreground
   useEffect(() => {
@@ -316,6 +324,7 @@ const WebViewScreen = ({ route }) => {
 
         case 'CONNECT_WIFI':
           if (message.ssid) {
+            isDeviceOnboarding.current = true;
             const { ssid, password } = message;
             connectToWifi(ssid, password);
           } else {
@@ -336,6 +345,7 @@ const WebViewScreen = ({ route }) => {
           break;
 
         case 'OPEN_WIFI_SETTINGS':
+          isDeviceOnboarding.current = true;
           if (Platform.OS === 'android') {
             Linking.sendIntent('android.settings.WIFI_SETTINGS');
 
@@ -994,6 +1004,8 @@ const WebViewScreen = ({ route }) => {
   };
 
   const releaseNetworkBinding = async () => {
+    isDeviceOnboarding.current = false;
+
     try {
       await forceWifiUsage(false);
     } catch (e) {
@@ -1048,6 +1060,8 @@ const WebViewScreen = ({ route }) => {
         });
       }, 3000);
     } catch (e) {
+      isDeviceOnboarding.current = false;
+
       // Release any partial binding so the app isn't left stranded
       try {
         await forceWifiUsage(false);
@@ -1076,6 +1090,7 @@ const WebViewScreen = ({ route }) => {
         translucent={true}
       />
       <WebView
+        key={webviewKey}
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
@@ -1103,7 +1118,10 @@ const WebViewScreen = ({ route }) => {
             currentWifi: { ssid: connectedSSID.ssid },
           });
         }}
-        onError={() => setIsLoading(false)}
+        onError={() => {
+          setIsLoading(false);
+          setIsOffline(true);
+        }}
         onHttpError={() => setIsLoading(false)}
         injectedJavaScriptBeforeContentLoaded={`
           window.NATIVE_APP_NAME = '${APP_CONFIG.APP_NAME}';
@@ -1143,12 +1161,11 @@ const WebViewScreen = ({ route }) => {
         onDismiss={dismiss}
         onSkipVersion={skipVersion}
       />
-      {isOffline && (
-        <OfflineScreen
-          onRetry={handleTryAgain}
-          topInset={insets.top}
-        />
-      )}
+      <OfflineScreen
+        visible={isOffline}
+        onRetry={handleTryAgain}
+        topInset={insets.top}
+      />
     </View>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,19 +9,56 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 
-const OfflineScreen = ({ onRetry, topInset = 0 }) => {
+const OfflineScreen = React.memo(({ visible, onRetry, topInset = 0 }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
+  const prevVisible = useRef(false);
+  const [shouldRender, setShouldRender] = useState(false);
+  const retrying = useRef(false);
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 350, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 0, duration: 350, useNativeDriver: true }),
-    ]).start();
-  }, [fadeAnim, slideAnim]);
+    if (visible && !prevVisible.current) {
+      setShouldRender(true);
+      retrying.current = false;
+      fadeAnim.setValue(0);
+      slideAnim.setValue(24);
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 350, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 350, useNativeDriver: true }),
+      ]).start();
+    } else if (!visible && prevVisible.current) {
+      retrying.current = false;
+      Animated.timing(fadeAnim, { toValue: 0, duration: 250, useNativeDriver: true }).start(() => {
+        // Completely unmount after fade-out so the white background doesn't block the WebView
+        setShouldRender(false);
+      });
+    }
+    prevVisible.current = visible;
+  }, [visible, fadeAnim, slideAnim]);
+
+  const handleRetry = useCallback(() => {
+    if (retrying.current) return;
+    retrying.current = true;
+    // Reset after a delay so user can tap again if still offline
+    setTimeout(() => { retrying.current = false; }, 3000);
+    onRetry();
+  }, [onRetry]);
+
+  if (!shouldRender) return null;
 
   return (
-    <View style={[styles.overlay, { paddingTop: topInset }]}>
+    <View
+      style={[styles.overlay, { paddingTop: topInset }]}
+      pointerEvents={visible ? 'auto' : 'none'}
+    >
+      <View style={styles.header}>
+        <Image
+          source={require('../assets/images/logo.png')}
+          style={styles.headerLogo}
+          resizeMode="contain"
+        />
+      </View>
+
       <Animated.View
         style={[styles.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
       >
@@ -41,7 +78,7 @@ const OfflineScreen = ({ onRetry, topInset = 0 }) => {
         <TouchableOpacity
           style={styles.buttonWrap}
           activeOpacity={0.9}
-          onPress={onRetry}
+          onPress={handleRetry}
         >
           <LinearGradient
             colors={['#0F796B', '#4EBD84']}
@@ -55,18 +92,31 @@ const OfflineScreen = ({ onRetry, topInset = 0 }) => {
       </Animated.View>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
     backgroundColor: '#FFFFFF',
   },
-  content: {
+  header: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  headerLogo: {
+    height: 32,
+    width: 160,
+  },
+  content: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 32,
     width: '100%',
   },
