@@ -164,6 +164,30 @@ export const ensureBluetoothOn = async () => {
   if (state === 'PoweredOn') return true;
   if (state === 'Unsupported') return false;
 
+  // iOS reports 'Unauthorized' when the user denied the app's Bluetooth
+  // permission (distinct from the radio being off). Guide them to Settings
+  // where the app's Bluetooth toggle lives — enabling the radio won't help.
+  if (state === 'Unauthorized') {
+    await new Promise(resolve => {
+      Alert.alert(
+        'Allow Bluetooth',
+        'Please allow Bluetooth access for SmartEco Enterprise in Settings to set up your device.',
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve() },
+          {
+            text: 'Open Settings',
+            onPress: () => {
+              Linking.openSettings();
+              resolve();
+            },
+          },
+        ],
+        { cancelable: true, onDismiss: () => resolve() },
+      );
+    });
+    return (await mgr.state()) === 'PoweredOn';
+  }
+
   // Try a one-tap programmatic enable (works on Android < 13). Race a timeout so a
   // hanging/unsupported enable() (Android 13+) can never block "Searching…".
   if (Platform.OS === 'android') {
@@ -232,12 +256,27 @@ export const scanForDevices = async ({ timeoutMs = 8000 } = {}) => {
   const mgr = getManager();
   const found = new Map();
 
+  // Android: filter natively by the advertised service UUID — reliable and
+  // battery-friendly, and proven working. iOS: Core Bluetooth only surfaces a
+  // peripheral when the filtered UUID is actually present in the (short)
+  // advertising packet; many ESP-AT builds advertise only the "IAQ_" name and
+  // expose the service UUID solely in the GATT table, so a UUID-filtered scan
+  // returns nothing on iOS. Scan unfiltered on iOS and match in JS by name
+  // prefix or (when present) the advertised service UUID.
+  const isIOS = Platform.OS === 'ios';
+  const scanFilter = isIOS ? null : [SERVICE_UUID];
+
+  const matchesTarget = device => {
+    if (!isIOS) return true; // native UUID filter already applied on Android
+    const name = device.name || device.localName || '';
+    if (name.toUpperCase().startsWith(BLE_NAME_PREFIX)) return true;
+    const advertised = device.serviceUUIDs || [];
+    return advertised.some(u => (u || '').toLowerCase() === SERVICE_UUID);
+  };
+
   return new Promise((resolve, reject) => {
-    // Filter by the advertised service UUID so discovery does not depend on the
-    // device name being present in the (small) advertising packet. The name comes
-    // from the scan response (active scan) and is used to match the target serial.
     mgr.startDeviceScan(
-      [SERVICE_UUID],
+      scanFilter,
       { allowDuplicates: false },
       (error, device) => {
         if (error) {
@@ -245,7 +284,7 @@ export const scanForDevices = async ({ timeoutMs = 8000 } = {}) => {
           reject(error);
           return;
         }
-        if (device && !found.has(device.id)) {
+        if (device && matchesTarget(device) && !found.has(device.id)) {
           found.set(device.id, {
             id: device.id,
             name: device.name || device.localName || null,

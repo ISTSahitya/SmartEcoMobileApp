@@ -43,9 +43,21 @@
 		<false/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>192.168.1.181</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+		</dict>
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>SmartEco Enterprise uses Bluetooth to discover and configure your nearby SmartEco devices.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>SmartEco Enterprise uses the camera to scan device QR codes during setup.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>SmartEco Enterprise uses the local network to connect to and configure your SmartEco devices.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

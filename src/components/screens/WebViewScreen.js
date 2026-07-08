@@ -34,6 +34,19 @@ import {
 
 const { VpnModule } = NativeModules;
 
+// iOS zooms the page in whenever an input with font-size < 16px is focused.
+// Injecting a stylesheet that enforces a 16px minimum on form controls stops
+// that auto-zoom. Runs after load so document.head exists; the injected <style>
+// also covers inputs the SPA adds later.
+const injectedAutoZoomFix = `
+  (function () {
+    var style = document.createElement('style');
+    style.textContent = 'input, select, textarea { font-size: max(16px, 1em) !important; }';
+    document.head.appendChild(style);
+    true;
+  })();
+`;
+
 const WebViewScreen = ({ route }) => {
   const insets = useSafeAreaInsets();
   const [canGoBack, setCanGoBack] = useState(false);
@@ -49,6 +62,9 @@ const WebViewScreen = ({ route }) => {
     skipVersion,
   } = useVersionCheck();
   const lastVersionData = useRef(null);
+  // Set when we send the user to Wi-Fi settings so we can re-read the connected
+  // network once they return to the app (see the AppState listener below).
+  const awaitingWifiReturn = useRef(false);
 
   const splashOnly = route.params?.splashOnly ?? false;
   const splashUri = splashOnly
@@ -81,6 +97,19 @@ const WebViewScreen = ({ route }) => {
     });
     return () => subscription.remove();
   }, [handleVersionData]);
+
+  // When the user returns from Wi-Fi settings, re-read the connected network
+  // and push it to the web app. The flag is set before we open settings.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (nextAppState === 'active' && awaitingWifiReturn.current) {
+        awaitingWifiReturn.current = false;
+        console.log("Getting connected wifi details");
+        getConnectedWifiDetails();
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   /* deeplink setup for oauth login */
   useEffect(() => {
@@ -136,7 +165,69 @@ const WebViewScreen = ({ route }) => {
   }, [canGoBack]);
 
   const webviewRef = useRef(null);
+
+  // iOS has no public deep link to the system Wi-Fi settings (sendIntent is
+  // Android-only). App-Prefs:root=WIFI opens the Wi-Fi pane on most iOS
+  // versions; fall back to the app's own Settings page if the scheme is
+  // unavailable so the "Open Settings" button always does something.
+  const openIOSWifiSettings = () => {
+    Alert.alert('Enable Wi-Fi', 'Please enable Wi-Fi from Settings', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Open Settings',
+        onPress: () => {
+          // Re-read the connected Wi-Fi when the user comes back to the app.
+          awaitingWifiReturn.current = true;
+          Linking.openURL('App-Prefs:root=WIFI').catch(() =>
+            Linking.openSettings(),
+          );
+        },
+      },
+    ]);
+  };
+
+  // iOS location flow. PermissionsAndroid and LocationServicesDialogBox are
+  // Android-only, so on iOS we lean on WifiManager.getCurrentWifiSSID(), which
+  // natively shows the Core Location prompt the first time and rejects with a
+  // locationPermission* code once the user has denied it. On denial we send the
+  // user to the app's Settings page (where iOS keeps the Location toggle).
+  const checkAndAskLocationIOS = async () => {
+    try {
+      await WifiManager.getCurrentWifiSSID();
+      return true;
+    } catch (e) {
+      const code = (e?.code || e?.message || '').toString().toLowerCase();
+      const denied =
+        code.includes('locationpermission') ||
+        code.includes('denied') ||
+        code.includes('restricted');
+
+      if (denied) {
+        Alert.alert(
+          'Location Permission Required',
+          'Please allow Location access for SmartEco Enterprise in Settings to scan Wi-Fi networks.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: () => Linking.openURL('app-settings:'),
+            },
+          ],
+        );
+        return false;
+      }
+
+      // "Could not detect SSID" (e.g. not currently on Wi-Fi) is not a
+      // permission failure — access is granted, so let the caller proceed.
+      return true;
+    }
+  };
+
   const checkAndAskLocation = async () => {
+    if (Platform.OS === 'ios') {
+      return checkAndAskLocationIOS();
+    }
+
     // 1. Request location permission
     const permission = await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
@@ -200,6 +291,10 @@ const WebViewScreen = ({ route }) => {
       // (max 4 scans / 2 min on Android 9+); fall back to the last cached
       // list in that case so the user still sees networks.
       const loadNetworks = async () => {
+        // iOS has no public API to enumerate nearby Wi-Fi networks
+        // (reScanAndLoadWifiList/loadWifiList are Android-only), so return an
+        // empty list — the web falls back to manual SSID entry on iOS.
+        if (Platform.OS === 'ios') return [];
         try {
           const fresh = await WifiManager.reScanAndLoadWifiList();
           if (Array.isArray(fresh)) return fresh;
@@ -277,6 +372,7 @@ const WebViewScreen = ({ route }) => {
           break;
 
         case 'BLE_SEND_CONFIG':
+          console.log("Credentials sending");
           bleSend(message.payload);
           break;
 
@@ -296,14 +392,7 @@ const WebViewScreen = ({ route }) => {
           if (Platform.OS === 'android') {
             Linking.sendIntent('android.settings.WIFI_SETTINGS');
           } else {
-            Alert.alert('Enable Wi-Fi', 'Please enable Wi-Fi from Settings', [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Open Settings',
-                onPress: () =>
-                  Linking.sendIntent('android.settings.WIFI_SETTINGS'),
-              },
-            ]);
+            openIOSWifiSettings();
           }
 
           break;
@@ -312,14 +401,7 @@ const WebViewScreen = ({ route }) => {
           if (Platform.OS === 'android') {
             Linking.sendIntent('android.settings.WIFI_SETTINGS');
           } else {
-            Alert.alert('Enable Wi-Fi', 'Please enable Wi-Fi from Settings', [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Open Settings',
-                onPress: () =>
-                  Linking.sendIntent('android.settings.WIFI_SETTINGS'),
-              },
-            ]);
+            openIOSWifiSettings();
           }
 
           break;
@@ -467,17 +549,23 @@ const WebViewScreen = ({ route }) => {
       if (connectedSSID) {
         // Look up the connected network's frequency (band) from the cached scan
         // list so the web can decide whether to auto-fill it (2.4 GHz only).
-        let frequency = null;
-        try {
-          const list = await WifiManager.loadWifiList();
-          if (Array.isArray(list)) {
-            const match = list.find(n => n.SSID === connectedSSID);
-            if (match && typeof match.frequency === 'number') {
-              frequency = match.frequency;
+        // loadWifiList is Android-only and iOS exposes no public API for the
+        // Wi-Fi band, so assume 2.4 GHz on iOS (2437 MHz = channel 6) — the
+        // provisioned ESP device is 2.4 GHz-only and reports back over BLE if
+        // the network can't actually be joined.
+        let frequency = Platform.OS === 'ios' ? 2437 : null;
+        if (Platform.OS === 'android') {
+          try {
+            const list = await WifiManager.loadWifiList();
+            if (Array.isArray(list)) {
+              const match = list.find(n => n.SSID === connectedSSID);
+              if (match && typeof match.frequency === 'number') {
+                frequency = match.frequency;
+              }
             }
+          } catch (e) {
+            // Ignore — band unknown; the web simply won't auto-fill.
           }
-        } catch (e) {
-          // Ignore — band unknown; the web simply won't auto-fill.
         }
         sendToWeb({
           action: 'WIFI_CONNECT_RESULT',
@@ -800,7 +888,7 @@ const WebViewScreen = ({ route }) => {
     <View
       style={[
         styles.container,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
+        { paddingTop: insets.top},
       ]}
     >
       <StatusBar
@@ -814,13 +902,24 @@ const WebViewScreen = ({ route }) => {
         onMessage={onWebMessage}
         source={{ uri: 'https://atlas.smartgeoapps.com/SmartecoAvd' }}
         style={[styles.webview, { backgroundColor: '#fff' }]}
-        contentInsetAdjustmentBehavior="automatic"
+        contentInsetAdjustmentBehavior="never"
         androidLayerType="hardware"
         cacheEnabled={true}
         cacheMode="LOAD_DEFAULT"
         domStorageEnabled={true}
         javaScriptEnabled={true}
         startInLoadingState={true}
+        // Camera access for the in-web QR scanner: play the camera stream inline
+        // (not fullscreen) and don't require a user gesture to start it. iOS also
+        // needs NSCameraUsageDescription (Info.plist); Android needs the CAMERA
+        // manifest permission — both are in place.
+        allowsInlineMediaPlayback={true}
+        mediaPlaybackRequiresUserAction={false}
+        // iOS: auto-grant the WKWebView getUserMedia request for our trusted web
+        // app so the QR scanner starts without a second WebKit-level prompt. The
+        // OS camera permission prompt (from NSCameraUsageDescription) still shows
+        // once. Android grants via the native WebChromeClient automatically.
+        mediaCapturePermissionGrantType="grant"
         renderLoading={() => (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="small" color="#0F796B" />
@@ -845,6 +944,7 @@ const WebViewScreen = ({ route }) => {
           });
           true;
         `}
+        injectedJavaScript={injectedAutoZoomFix}
         onNavigationStateChange={navState => {
           setCanGoBack(navState.canGoBack);
         }}

@@ -284,6 +284,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = Smart/Smart.entitlements;
 				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Smart/Info.plist;
@@ -320,6 +321,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = Smart/Smart.entitlements;
 				CURRENT_PROJECT_VERSION = 3;
 				INFOPLIST_FILE = Smart/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "SmartEco Enterprise";
