@@ -813,7 +813,7 @@ const WebViewScreen = ({ route }) => {
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
-        source={{ uri: 'https://atlas.smartgeoapps.com/SmartecoAvd' }}
+        source={{ uri: 'https://atlas.smartgeoapps.com/SmartecoAvdDev' }}
         style={[styles.webview, { backgroundColor: '#fff' }]}
         contentInsetAdjustmentBehavior="automatic"
         androidLayerType="hardware"
