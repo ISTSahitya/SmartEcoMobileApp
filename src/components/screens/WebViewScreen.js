@@ -30,6 +30,9 @@ import {
   disconnectDevice,
   sendConfig as bleSendConfig,
 } from '../../services/bleProvisioning';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { authorize } from 'react-native-app-auth';
+import { GOOGLE_WEB_CLIENT_ID, MICROSOFT } from '../../config/socialAuth';
 
 const { VpnModule } = NativeModules;
 
@@ -83,41 +86,20 @@ const WebViewScreen = ({ route }) => {
     return () => subscription.remove();
   }, [handleVersionData]);
 
-  /* deeplink setup for oauth login */
+  /* Native social login: configure Google Sign-In once. Microsoft uses
+     react-native-app-auth (Chrome Custom Tab) and Facebook uses the native FB
+     SDK — neither needs setup here. The provider auth runs natively (outside the
+     WebView, which the providers block) and the resulting access token is handed
+     back to the web via SOCIAL_LOGIN_RESULT. */
   useEffect(() => {
-    const handleDeepLink = ({ url }) => {
-      try {
-        console.log('Deep link received:', url);
-
-        const parsedUrl = new URL(url);
-        const token = parsedUrl.searchParams.get('token');
-        const error = parsedUrl.searchParams.get('error');
-        const state = parsedUrl.searchParams.get('state');
-        const code = parsedUrl.searchParams.get('code');
-
-        if (error) {
-          sendToWeb({ type: 'OAUTH_ERROR', error });
-          return;
-        }
-
-        if (token || code) {
-          sendToWeb({
-            type: 'OAUTH_SUCCESS',
-            access_token: token || undefined,
-            code: code || undefined,
-            state: state || undefined,
-          });
-        }
-      } catch (e) {
-        console.log('Deep link parse error:', e);
-        sendToWeb({ type: 'OAUTH_ERROR', error: 'Internal server error' });
-      }
-    };
-    const urlSubscription = Linking.addEventListener('url', handleDeepLink);
-
-    return () => {
-      urlSubscription.remove();
-    };
+    try {
+      GoogleSignin.configure({
+        webClientId: GOOGLE_WEB_CLIENT_ID,
+        offlineAccess: false,
+      });
+    } catch (e) {
+      console.log('GoogleSignin.configure failed:', e);
+    }
   }, []);
 
   //
@@ -237,6 +219,10 @@ const WebViewScreen = ({ route }) => {
         case 'APP_VERSION_INFO':
           lastVersionData.current = message.data;
           handleVersionData(message.data);
+          break;
+
+        case 'SOCIAL_LOGIN':
+          handleSocialLogin(message.provider);
           break;
 
         case 'SCAN_WIFI':
@@ -439,6 +425,65 @@ const WebViewScreen = ({ route }) => {
   const sendToWeb = data => {
     console.log('[Native → WebView] Sending:', JSON.stringify(data));
     webviewRef.current?.postMessage(JSON.stringify(data));
+  };
+
+  /* -------------------- Native social login -------------------- */
+  // Runs the provider SDK natively (providers block OAuth inside WebViews), then
+  // returns the access token to the web, which posts it to /social-login and
+  // handles the session / organization-setup flow.
+  const handleSocialLogin = async provider => {
+    try {
+      let token;
+
+      if (provider === 'google') {
+        await GoogleSignin.hasPlayServices({
+          showPlayServicesUpdateDialog: true,
+        });
+        await GoogleSignin.signIn();
+        const tokens = await GoogleSignin.getTokens();
+        token = tokens?.accessToken;
+      } else if (provider === 'microsoft') {
+        const result = await authorize({
+          issuer: MICROSOFT.issuer,
+          clientId: MICROSOFT.clientId,
+          redirectUrl: MICROSOFT.redirectUrl,
+          scopes: MICROSOFT.scopes,
+        });
+        token = result?.accessToken;
+      } else {
+        sendToWeb({
+          action: 'SOCIAL_LOGIN_RESULT',
+          provider,
+          success: false,
+          error: 'Unknown provider',
+        });
+        return;
+      }
+
+      if (!token) {
+        sendToWeb({
+          action: 'SOCIAL_LOGIN_RESULT',
+          provider,
+          success: false,
+          error: 'No token received',
+        });
+        return;
+      }
+
+      sendToWeb({
+        action: 'SOCIAL_LOGIN_RESULT',
+        provider,
+        success: true,
+        token,
+      });
+    } catch (e) {
+      sendToWeb({
+        action: 'SOCIAL_LOGIN_RESULT',
+        provider,
+        success: false,
+        error: e?.message || 'Login failed',
+      });
+    }
   };
 
   // Get current connected wifi details

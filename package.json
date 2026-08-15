@@ -13,6 +13,7 @@
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/netinfo": "^11.4.1",
+    "@react-native-google-signin/google-signin": "^13.2.0",
     "@react-native/new-app-screen": "0.82.1",
     "@react-navigation/native": "^7.1.20",
     "@react-navigation/native-stack": "^7.6.3",
@@ -22,6 +23,7 @@
     "react-native": "0.82.1",
     "react-native-android-location-enabler": "^3.0.1",
     "react-native-android-location-services-dialog-box": "^2.8.2",
+    "react-native-app-auth": "^8.0.3",
     "react-native-ble-plx": "^3.5.0",
     "react-native-blob-util": "^0.24.9",
     "react-native-device-info": "^15.0.2",
