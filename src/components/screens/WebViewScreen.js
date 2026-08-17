@@ -534,12 +534,20 @@ const WebViewScreen = ({ route }) => {
         const tokens = await GoogleSignin.getTokens();
         token = tokens?.accessToken;
       } else if (provider === 'microsoft') {
+        console.log('[Microsoft] calling authorize()...');
         const result = await authorize({
           issuer: MICROSOFT.issuer,
           clientId: MICROSOFT.clientId,
           redirectUrl: MICROSOFT.redirectUrl,
           scopes: MICROSOFT.scopes,
+          // react-native-app-auth's iOS native module declares this as a
+          // non-nullable NSString; leaving it undefined (its JS default is
+          // actually `null`) crashes the RN bridge under the New
+          // Architecture with "NSNull cannot be converted to NSString".
+          // Always pass an explicit value.
+          iosCustomBrowser: 'safari',
         });
+        console.log('[Microsoft] authorize() returned:', JSON.stringify(result));
         token = result?.accessToken;
       } else if (provider === 'apple') {
         // Sign in with Apple has no native SDK on Android; App Store guideline

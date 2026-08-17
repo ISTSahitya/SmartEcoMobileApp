@@ -20,7 +20,13 @@ export const MICROSOFT = {
   // (an iOS/macOS platform entry is needed in addition to the Android one), and
   // matches appAuthRedirectScheme=smartecoavd in android/app/build.gradle and
   // the CFBundleURLSchemes entry in ios/Smart/Info.plist.
-  redirectUrl: 'smartecoavd://oauth2redirect',
+  // Trailing slash is required: Azure's callback actually comes back as
+  // smartecoavd://oauth2redirect/?code=... (it echoes its own canonically
+  // stored redirect URI rather than whatever was sent in the request). Without
+  // the slash here, AppAuth-iOS's resumeExternalUserAgentFlow doesn't
+  // recognize the incoming URL as its own redirect and silently drops it —
+  // the authorize() promise then hangs forever with no error.
+  redirectUrl: 'smartecoavd://oauth2redirect/',
   // Graph scope only — deliberately NO openid/profile/email. On the "common"
   // endpoint the ID token issuer is tenant-specific and fails AppAuth's issuer
   // check ("invalid id token"). We only need the access token (backend reads

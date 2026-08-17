@@ -52,13 +52,20 @@ class AppDelegate: UIResponder, UIApplicationDelegate, RNAppAuthAuthorizationFlo
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
-    if let authorizationFlowManagerDelegate = self.authorizationFlowManagerDelegate,
-       authorizationFlowManagerDelegate.resumeExternalUserAgentFlow(with: url) {
-      return true
+    print("[AppDelegate] openURL received: \(url.absoluteString)")
+    print("[AppDelegate] authorizationFlowManagerDelegate is \(authorizationFlowManagerDelegate == nil ? "nil" : "set")")
+    if let authorizationFlowManagerDelegate = self.authorizationFlowManagerDelegate {
+      let resumed = authorizationFlowManagerDelegate.resumeExternalUserAgentFlow(with: url)
+      print("[AppDelegate] resumeExternalUserAgentFlow returned \(resumed)")
+      if resumed {
+        return true
+      }
     }
     if GIDSignIn.sharedInstance.handle(url) {
+      print("[AppDelegate] handled by GIDSignIn")
       return true
     }
+    print("[AppDelegate] falling through to RCTLinkingManager")
     return RCTLinkingManager.application(app, open: url, options: options)
   }
 
