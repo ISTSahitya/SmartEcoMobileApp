@@ -30,6 +30,23 @@
 				<string>Smart</string>
 			</array>
 		</dict>
+		<dict>
+			<!-- Google Sign-In: reversed form of GOOGLE_IOS_CLIENT_ID in
+			     src/config/socialAuth.js. -->
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.973195332590-1fk3fq7p6q5gcp64geefvfdoahcd22f2</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- react-native-app-auth: catches the Microsoft OAuth redirect
+			     (MICROSOFT.redirectUrl in src/config/socialAuth.js is
+			     smartecoavd://oauth2redirect). -->
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>smartecoavd</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>

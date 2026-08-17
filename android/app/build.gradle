@@ -92,6 +92,9 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0.0"
+        // react-native-app-auth: scheme it uses to catch the Microsoft OAuth
+        // redirect (matches MICROSOFT.redirectUrl smartecoavd://oauth2redirect).
+        manifestPlaceholders = [appAuthRedirectScheme: 'smartecoavd']
     }
     signingConfigs {
         debug {

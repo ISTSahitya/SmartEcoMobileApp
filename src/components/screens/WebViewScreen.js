@@ -31,6 +31,14 @@ import {
   disconnectDevice,
   sendConfig as bleSendConfig,
 } from '../../services/bleProvisioning';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { authorize } from 'react-native-app-auth';
+import { appleAuth } from '@invertase/react-native-apple-authentication';
+import {
+  GOOGLE_WEB_CLIENT_ID,
+  GOOGLE_IOS_CLIENT_ID,
+  MICROSOFT,
+} from '../../config/socialAuth';
 
 const { VpnModule } = NativeModules;
 
@@ -111,41 +119,21 @@ const WebViewScreen = ({ route }) => {
     return () => subscription.remove();
   }, []);
 
-  /* deeplink setup for oauth login */
+  /* Native social login: configure Google Sign-In once. Microsoft uses
+     react-native-app-auth (Chrome Custom Tab / ASWebAuthenticationSession) and
+     needs no setup here. The provider auth runs natively (outside the WebView,
+     which the providers block) and the resulting access token is handed back
+     to the web via SOCIAL_LOGIN_RESULT. */
   useEffect(() => {
-    const handleDeepLink = ({ url }) => {
-      try {
-        console.log('Deep link received:', url);
-
-        const parsedUrl = new URL(url);
-        const token = parsedUrl.searchParams.get('token');
-        const error = parsedUrl.searchParams.get('error');
-        const state = parsedUrl.searchParams.get('state');
-        const code = parsedUrl.searchParams.get('code');
-
-        if (error) {
-          sendToWeb({ type: 'OAUTH_ERROR', error });
-          return;
-        }
-
-        if (token || code) {
-          sendToWeb({
-            type: 'OAUTH_SUCCESS',
-            access_token: token || undefined,
-            code: code || undefined,
-            state: state || undefined,
-          });
-        }
-      } catch (e) {
-        console.log('Deep link parse error:', e);
-        sendToWeb({ type: 'OAUTH_ERROR', error: 'Internal server error' });
-      }
-    };
-    const urlSubscription = Linking.addEventListener('url', handleDeepLink);
-
-    return () => {
-      urlSubscription.remove();
-    };
+    try {
+      GoogleSignin.configure({
+        webClientId: GOOGLE_WEB_CLIENT_ID,
+        iosClientId: GOOGLE_IOS_CLIENT_ID,
+        offlineAccess: false,
+      });
+    } catch (e) {
+      console.log('GoogleSignin.configure failed:', e);
+    }
   }, []);
 
   //
@@ -331,6 +319,10 @@ const WebViewScreen = ({ route }) => {
         case 'APP_VERSION_INFO':
           lastVersionData.current = message.data;
           handleVersionData(message.data);
+          break;
+
+        case 'SOCIAL_LOGIN':
+          handleSocialLogin(message.provider);
           break;
 
         case 'SCAN_WIFI':
@@ -520,6 +512,104 @@ const WebViewScreen = ({ route }) => {
   const sendToWeb = data => {
     console.log('[Native → WebView] Sending:', JSON.stringify(data));
     webviewRef.current?.postMessage(JSON.stringify(data));
+  };
+
+  /* -------------------- Native social login -------------------- */
+  // Runs the provider SDK natively (providers block OAuth inside WebViews), then
+  // returns the access token to the web, which posts it to /social-login and
+  // handles the session / organization-setup flow.
+  const handleSocialLogin = async provider => {
+    try {
+      let token;
+      let extra = {};
+
+      if (provider === 'google') {
+        // hasPlayServices() is an Android/Play-Services-only check.
+        if (Platform.OS === 'android') {
+          await GoogleSignin.hasPlayServices({
+            showPlayServicesUpdateDialog: true,
+          });
+        }
+        await GoogleSignin.signIn();
+        const tokens = await GoogleSignin.getTokens();
+        token = tokens?.accessToken;
+      } else if (provider === 'microsoft') {
+        const result = await authorize({
+          issuer: MICROSOFT.issuer,
+          clientId: MICROSOFT.clientId,
+          redirectUrl: MICROSOFT.redirectUrl,
+          scopes: MICROSOFT.scopes,
+        });
+        token = result?.accessToken;
+      } else if (provider === 'apple') {
+        // Sign in with Apple has no native SDK on Android; App Store guideline
+        // 4.8 only requires offering it on iOS anyway.
+        if (Platform.OS !== 'ios') {
+          sendToWeb({
+            action: 'SOCIAL_LOGIN_RESULT',
+            provider,
+            success: false,
+            error: 'Apple Sign-In is only available on iOS',
+          });
+          return;
+        }
+        if (!appleAuth.isSupported) {
+          sendToWeb({
+            action: 'SOCIAL_LOGIN_RESULT',
+            provider,
+            success: false,
+            error: 'Sign in with Apple is not supported on this device',
+          });
+          return;
+        }
+        const appleResponse = await appleAuth.performRequest({
+          requestedOperation: appleAuth.Operation.LOGIN,
+          requestedScopes: [appleAuth.Scope.EMAIL, appleAuth.Scope.FULL_NAME],
+        });
+        token = appleResponse?.identityToken;
+        // Apple only returns the user's email/name on the very first
+        // authorization for a given Apple ID — pass them along now so the
+        // backend can capture them before they're gone for good.
+        extra = {
+          authorizationCode: appleResponse?.authorizationCode || undefined,
+          email: appleResponse?.email || undefined,
+          fullName: appleResponse?.fullName || undefined,
+        };
+      } else {
+        sendToWeb({
+          action: 'SOCIAL_LOGIN_RESULT',
+          provider,
+          success: false,
+          error: 'Unknown provider',
+        });
+        return;
+      }
+
+      if (!token) {
+        sendToWeb({
+          action: 'SOCIAL_LOGIN_RESULT',
+          provider,
+          success: false,
+          error: 'No token received',
+        });
+        return;
+      }
+
+      sendToWeb({
+        action: 'SOCIAL_LOGIN_RESULT',
+        provider,
+        success: true,
+        token,
+        ...extra,
+      });
+    } catch (e) {
+      sendToWeb({
+        action: 'SOCIAL_LOGIN_RESULT',
+        provider,
+        success: false,
+        error: e?.message || 'Login failed',
+      });
+    }
   };
 
   // Get current connected wifi details
