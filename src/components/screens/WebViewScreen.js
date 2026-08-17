@@ -570,10 +570,15 @@ const WebViewScreen = ({ route }) => {
         // Apple only returns the user's email/name on the very first
         // authorization for a given Apple ID — pass them along now so the
         // backend can capture them before they're gone for good.
+        const nameParts = [
+          appleResponse?.fullName?.givenName,
+          appleResponse?.fullName?.middleName,
+          appleResponse?.fullName?.familyName,
+        ].filter(Boolean);
         extra = {
           authorizationCode: appleResponse?.authorizationCode || undefined,
           email: appleResponse?.email || undefined,
-          fullName: appleResponse?.fullName || undefined,
+          fullName: nameParts.length ? nameParts.join(' ') : undefined,
         };
       } else {
         sendToWeb({
