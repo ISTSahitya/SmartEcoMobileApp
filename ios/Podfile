@@ -17,6 +17,14 @@ end
 target 'Smart' do
   config = use_native_modules!
 
+  # RN's own react_native_pods.rb only sets :modular_headers on React's own
+  # pods, so these two third-party pods otherwise build as plain static
+  # libraries with no module map — Swift's `import react_native_app_auth` /
+  # `import GoogleSignIn` in AppDelegate.swift then fails with "No such
+  # module". Forcing modular headers here gives them one.
+  pod 'react-native-app-auth', :path => '../node_modules/react-native-app-auth', :modular_headers => true
+  pod 'GoogleSignIn', :modular_headers => true
+
   use_react_native!(
     :path => config[:reactNativePath],
     # An absolute path to your application root.
