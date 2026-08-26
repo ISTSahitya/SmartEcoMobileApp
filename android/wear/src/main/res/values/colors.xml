@@ -1,0 +1,26 @@
+<resources>
+    <!-- Dark by default: watch displays are OLED and often always-on, so large
+         light areas cost real battery. -->
+    <color name="background">#FF000000</color>
+    <color name="surface">#FF1C1B1F</color>
+    <color name="on_surface">#FFE6E1E5</color>
+    <color name="on_surface_variant">#FFB0B0B0</color>
+    <color name="primary">#FF4CAF50</color>
+    <color name="on_primary">#FF000000</color>
+    <color name="error">#FFFF5252</color>
+
+    <!-- AirQualityStatus — derived from AQI, where LOWER is better. -->
+    <color name="status_good">#FF4CAF50</color>
+    <color name="status_moderate">#FFFFB300</color>
+    <color name="status_poor">#FFFF5252</color>
+    <color name="status_unknown">#FF757575</color>
+
+    <!-- ScoreCategory — derived from a 0-100 score, where HIGHER is better.
+         Deliberately a separate set: the two scales run in opposite directions
+         and must never share a colour mapping. -->
+    <color name="score_good">#FF4CAF50</color>
+    <color name="score_moderate">#FFFFB300</color>
+    <color name="score_poor">#FFFF7043</color>
+    <color name="score_unhealthy">#FFFF5252</color>
+    <color name="score_severe">#FFB71C1C</color>
+</resources>

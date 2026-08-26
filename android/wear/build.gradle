@@ -1,0 +1,146 @@
+apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "org.jetbrains.kotlin.plugin.compose"
+apply plugin: "org.jetbrains.kotlin.plugin.serialization"
+// Deliberately NOT applying "com.facebook.react": this module has no React Native,
+// no codegen, no autolinking and no NDK. Autolinking cannot reach it either — RNGP
+// only includes projects listed in build/generated/autolinking/autolinking.json.
+
+// Versions are declared version-less above because the plugins are already on the
+// root buildscript classpath (see android/build.gradle).
+
+// Same release key as the phone app. Paths are relative to android/app/ because
+// keystore.properties stores a bare filename.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+// RNGP injects google()/mavenCentral() into allprojects, but from inside :app's
+// afterEvaluate. Declared explicitly so :wear does not depend on that ordering.
+repositories {
+    google()
+    mavenCentral()
+}
+
+android {
+    namespace "com.smartecoenterprise.app.wear"
+    compileSdk rootProject.ext.compileSdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+
+    defaultConfig {
+        // Distinct from the phone app's com.smartecoenterprise.app so a
+        // mis-targeted `installDebug` can never overwrite the phone app, and both
+        // can sit on one test device. This is a standalone watch app, so it does
+        // not need a shared id to function.
+        applicationId "com.smartecoenterprise.app.wear"
+
+        // Deliberately NOT rootProject.ext.minSdkVersion (24) — that is a plain
+        // Groovy ext property with no enforcement. 30 = Wear OS 3, which modern
+        // Wear Compose effectively requires.
+        minSdk 30
+        targetSdk rootProject.ext.targetSdkVersion
+
+        versionCode 1
+        versionName "1.0.0"
+
+        vectorDrawables.useSupportLibrary = true
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        debug {
+            storeFile rootProject.file("app/debug.keystore")
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        if (keystorePropertiesFile.exists()) {
+            release {
+                storeFile rootProject.file("app/" + keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
+    buildFeatures {
+        compose true
+        // AGP 8 defaults this to false; needed for BuildConfig.API_BASE_URL.
+        buildConfig true
+    }
+    // NOTE: no composeOptions { kotlinCompilerExtensionVersion } — that is removed
+    // under Kotlin 2.x. The compose plugin applied above supplies the compiler.
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+            buildConfigField "String", "API_BASE_URL", "\"https://app.smarteco.ai/SmartecoAvdapi/\""
+        }
+        release {
+            signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
+            // Off initially, matching enableProguardInReleaseBuilds=false in :app.
+            // Enabling it later needs kotlinx-serialization keep rules.
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            buildConfigField "String", "API_BASE_URL", "\"https://app.smarteco.ai/SmartecoAvdapi/\""
+        }
+    }
+
+    packaging {
+        resources {
+            excludes += ["/META-INF/{AL2.0,LGPL2.1}", "META-INF/DEPENDENCIES", "META-INF/*.version"]
+        }
+    }
+
+    // NO compileOptions / kotlinOptions / kotlin { jvmToolchain } blocks:
+    // RNGP's JdkConfiguratorUtils force-sets Java 17 through AGP finalizeDsl and
+    // calls kotlinExtension.jvmToolchain(17) on every project applying
+    // org.jetbrains.kotlin.android. Anything set here would be overwritten.
+}
+
+dependencies {
+    def composeBom = platform("androidx.compose:compose-bom:2025.06.01")
+    implementation composeBom
+    androidTestImplementation composeBom
+
+    // Core Compose — versions come from the BOM.
+    implementation "androidx.compose.ui:ui"
+    implementation "androidx.compose.ui:ui-tooling-preview"
+    implementation "androidx.compose.foundation:foundation"
+    implementation "androidx.compose.runtime:runtime"
+    debugImplementation "androidx.compose.ui:ui-tooling"
+    // Do NOT add androidx.compose.material or material3 — those are the PHONE
+    // Material libraries and produce wrong sizing/theming on a watch.
+
+    // Wear Compose — released on its own train, NOT covered by the Compose BOM.
+    implementation "androidx.wear.compose:compose-material:1.4.1"
+    implementation "androidx.wear.compose:compose-foundation:1.4.1"
+    implementation "androidx.wear.compose:compose-navigation:1.4.1"
+    implementation "androidx.wear:wear-tooling-preview:1.0.0"
+    implementation "androidx.wear:wear-input:1.1.0"
+
+    implementation "androidx.core:core-ktx:1.13.1"
+    implementation "androidx.core:core-splashscreen:1.0.1"
+    implementation "androidx.activity:activity-compose:1.9.3"
+    implementation "androidx.lifecycle:lifecycle-runtime-compose:2.8.7"
+    implementation "androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7"
+
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"
+    implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0"
+
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
+    implementation "com.squareup.okhttp3:logging-interceptor:4.12.0"
+    implementation "com.squareup.retrofit2:retrofit:2.11.0"
+    implementation "com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0"
+
+    // NOT androidx.security:security-crypto — EncryptedSharedPreferences is
+    // deprecated. Token is encrypted with an AndroidKeyStore key (see CryptoBox.kt).
+    implementation "androidx.datastore:datastore-preferences:1.1.1"
+
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "com.squareup.okhttp3:mockwebserver:4.12.0"
+    testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0"
+}

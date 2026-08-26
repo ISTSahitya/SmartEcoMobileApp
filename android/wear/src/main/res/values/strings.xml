@@ -1,0 +1,35 @@
+<resources>
+    <string name="app_name">SmartEco</string>
+
+    <!-- Sign in -->
+    <string name="sign_in">Sign in</string>
+    <string name="sign_out">Sign out</string>
+    <string name="email">Email</string>
+    <string name="password">Password</string>
+    <string name="password_masked">••••••</string>
+    <string name="signing_in">Signing in…</string>
+
+    <!-- Navigation / screens -->
+    <string name="overview">Overview</string>
+    <string name="rooms">Rooms</string>
+    <string name="all_rooms">All rooms</string>
+    <string name="refresh">Refresh</string>
+    <string name="retry">Retry</string>
+
+    <!-- States -->
+    <string name="loading">Loading…</string>
+    <string name="no_data">No data</string>
+    <string name="no_connection">No connection</string>
+    <string name="no_rooms">No rooms yet</string>
+    <string name="session_expired">Session expired. Sign in again.</string>
+    <string name="sign_in_failed">Sign in failed</string>
+    <string name="something_went_wrong">Something went wrong</string>
+
+    <!-- A super_admin has no single tenant, and the overview endpoint is
+         inherently single-tenant, so it returns 400 rather than guessing. -->
+    <string name="multi_tenant_account">This account manages multiple tenants. Sign in with a tenant account to use the watch app.</string>
+
+    <!-- Air quality -->
+    <string name="stale">Stale</string>
+    <string name="aqi">AQI</string>
+</resources>

@@ -15,6 +15,19 @@ buildscript {
         classpath("com.android.tools.build:gradle")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+
+        // --- :wear module only ---
+        // Declared here rather than via the plugins{} DSL in wear/build.gradle:
+        // settings.gradle's pluginManagement{} has no repositories{}, and a versioned
+        // plugins{ id(..) version ".." } collides with the version-less
+        // kotlin-gradle-plugin already on this classpath.
+        //
+        // Since Kotlin 2.0 the Compose compiler ships as a Gradle plugin versioned in
+        // lockstep with KGP — NOT as composeOptions.kotlinCompilerExtensionVersion.
+        // kotlinVersion above must match what RNGP resolves:
+        //   node_modules/@react-native/gradle-plugin/gradle/libs.versions.toml -> kotlin
+        classpath("org.jetbrains.kotlin:compose-compiler-gradle-plugin:$kotlinVersion")
+        classpath("org.jetbrains.kotlin:kotlin-serialization:$kotlinVersion")
     }
 }
 

@@ -3,4 +3,14 @@ plugins { id("com.facebook.react.settings") }
 extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
 rootProject.name = 'SmartEco'
 include ':app'
+
+// Wear OS companion (standalone — no React Native, no autolinking).
+// Guarded because com.facebook.react.rootproject wires :app:preBuild -> :wear:preBuild
+// and forces evaluationDependsOn(':app') on every subproject, so a :wear that fails to
+// configure would block phone builds too.
+// Escape hatch: ./gradlew :app:assembleRelease -PincludeWearModule=false
+if (providers.gradleProperty('includeWearModule').getOrElse('true').toBoolean()) {
+    include ':wear'
+}
+
 includeBuild('../node_modules/@react-native/gradle-plugin')
