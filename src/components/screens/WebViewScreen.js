@@ -154,6 +154,68 @@ const WebViewScreen = ({ route }) => {
 
   const webviewRef = useRef(null);
 
+  // Pending Universal Link stored while onboarding/splash is active.
+  const pendingDeepLinkRef = useRef(null);
+
+  const navigateWebviewTo = (target) => {
+    if (!target) return;
+    if (webviewRef.current && typeof webviewRef.current.injectJavaScript === 'function') {
+      const js = `window.location.href = ${JSON.stringify(target)}; true;`;
+      try {
+        webviewRef.current.injectJavaScript(js);
+        console.log('[Universal Link] Navigated WebView to', target);
+      } catch (e) {
+        console.log('[Universal Link] injectJavaScript failed', e);
+        pendingDeepLinkRef.current = target;
+      }
+    } else {
+      pendingDeepLinkRef.current = target;
+    }
+  };
+
+  // Listen for Universal Links (cold start and while app is running)
+  useEffect(() => {
+    const handleIncoming = (evtOrUrl) => {
+      const incoming = typeof evtOrUrl === 'string' ? evtOrUrl : evtOrUrl?.url;
+      if (!incoming) return;
+      console.log('[Universal Link] Received:182', incoming);
+      try {
+        const parsed = new URL(incoming);
+        if (
+          parsed.protocol === 'https:' &&
+          parsed.hostname === 'app.smarteco.ai' &&
+          parsed.pathname === '/SmartecoAvd/dashboard/alerts/'
+        ) {
+          const target = parsed.origin + parsed.pathname + parsed.search + parsed.hash;
+          if (showSplash) {
+            pendingDeepLinkRef.current = target;
+            console.log('[Universal Link] Deferred until splash done:', target);
+          } else {
+            navigateWebviewTo(target);
+          }
+        }
+      } catch (_) {}
+    };
+
+    // Cold start
+    Linking.getInitialURL().then(url => { if (url) handleIncoming(url); }).catch(() => {});
+
+    // Warm start
+    const sub = Linking.addEventListener('url', handleIncoming);
+    return () => {
+      try { sub.remove(); } catch (_) {}
+    };
+  }, [showSplash]);
+
+  // When splash finishes, process any pending deep link
+  useEffect(() => {
+    if (!showSplash && pendingDeepLinkRef.current) {
+      const target = pendingDeepLinkRef.current;
+      pendingDeepLinkRef.current = null;
+      navigateWebviewTo(target);
+    }
+  }, [showSplash]);
+
   // iOS has no public deep link to the system Wi-Fi settings (sendIntent is
   // Android-only). App-Prefs:root=WIFI opens the Wi-Fi pane on most iOS
   // versions; fall back to the app's own Settings page if the scheme is

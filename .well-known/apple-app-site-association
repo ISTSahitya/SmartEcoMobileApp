@@ -1,0 +1,16 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "9N5UX422E4.org.ist.smartecoenterprise"
+        ],
+        "components": [
+          {
+            "/": "/SmartecoAvd/*"
+          }
+        ]
+      }
+    ]
+  }
+}
