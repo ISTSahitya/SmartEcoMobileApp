@@ -41,10 +41,24 @@
       android:screenOrientation="portrait"
       android:exported="true"
       android:theme="@style/BootTheme">
+
+    <!-- Normal app launch -->
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
+
+      <!-- Android App Link: https://app.smarteco.ai/SmartecoAvd/... -->
+      <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data
+            android:scheme="https"
+            android:host="app.smarteco.ai"
+            android:pathPrefix="/SmartecoAvd" />
+      </intent-filter>
+
     </activity>
   </application>
 </manifest>

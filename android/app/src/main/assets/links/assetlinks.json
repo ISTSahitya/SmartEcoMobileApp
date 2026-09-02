@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.smartecoenterprise.app",
+      "sha256_cert_fingerprints": [
+        "D1:CD:63:48:03:26:B7:AA:FF:E1:B0:79:61:C7:61:AD:1D:E9:FB:02:35:94:F6:B8:62:ED:88:7A:75:95:43:A2",
+        "FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C"
+      ]
+    }
+  }
+]

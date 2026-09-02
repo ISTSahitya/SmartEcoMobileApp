@@ -43,7 +43,9 @@ const WebViewScreen = ({ route }) => {
   const [canGoBack, setCanGoBack] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
+  const [pendingDeepLink, setPendingDeepLink] = useState(null);
   const splashOpacity = useRef(new Animated.Value(1)).current;
+  const ALERTS_WEB_URL = 'https://app.smarteco.ai/SmartecoAvd/dashboard/alerts';
   const {
     modalVisible,
     updateType,
@@ -75,6 +77,73 @@ const WebViewScreen = ({ route }) => {
       }
     } catch (_) {}
   }, [splashOnly, splashOpacity]);
+
+  const handleDeepLink = useCallback((url) => {
+    if (!url) return;
+
+    console.log('[Deep Link] Received:', url);
+
+    try {
+      const parsedUrl = new URL(url);
+
+      const isAlertsAppLink =
+        parsedUrl.protocol === 'https:' &&
+        parsedUrl.hostname === 'app.smarteco.ai' && 
+        parsedUrl.pathname === '/SmartecoAvd/dashboard/alerts/';
+
+      if (isAlertsAppLink) {
+        console.log('[Deep Link] Alerts link received');
+        setIsLoading(false);
+        setPendingDeepLink('alerts');
+      }
+    } catch (error) {
+      console.log('[Deep Link] Invalid URL:', url, error);
+    }
+  }, []);
+
+  useEffect(() => {
+    Linking.getInitialURL()
+      .then(url => {
+        if (url) {
+          console.log('[Deep Link] Initial URL:', url);
+          setTimeout(() => {
+            handleDeepLink(url);
+          }, 1000);
+        }
+      })
+      .catch(error => {
+        console.log('[Deep Link] Error getting initial URL:', error);
+      });
+
+    const subscription = Linking.addEventListener('url', event => {
+      console.log('[Deep Link] URL event:', event.url);
+      handleDeepLink(event.url);
+    });
+
+    return () => subscription.remove();
+  }, [handleDeepLink]); 
+
+  const shouldShowLoadingOverlay = isLoading && !showSplash && !pendingDeepLink;
+
+  useEffect(() => {
+    if (!showSplash && pendingDeepLink === 'alerts') {
+      const timer = setTimeout(() => {
+        webviewRef.current?.injectJavaScript(`
+          window.location.href = ${JSON.stringify(ALERTS_WEB_URL)};
+          true;
+        `);
+
+        console.log(`[Deep Link] Injected JavaScript to navigate to alerts:
+          window.location.href = ${ALERTS_WEB_URL};
+          true;
+        `);
+
+        setPendingDeepLink(null);
+      }, 300);
+
+      return () => clearTimeout(timer);
+    }
+  }, [showSplash, pendingDeepLink]);
 
   // Re-check version when app comes to foreground
   useEffect(() => {
@@ -895,7 +964,7 @@ const WebViewScreen = ({ route }) => {
           setCanGoBack(navState.canGoBack);
         }}
       />
-      {isLoading && !showSplash && (
+      {shouldShowLoadingOverlay && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="small" color="#0F796B" />
           <Text style={styles.loadingText}>Loading SmartEco Enterprise...</Text>
