@@ -90,8 +90,8 @@ android {
         applicationId "com.smartecoenterprise.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 3
-        versionName "1.0.2"
+        versionCode 4
+        versionName "1.0.3"
         // react-native-app-auth: scheme it uses to catch the Microsoft OAuth
         // redirect (matches MICROSOFT.redirectUrl smartecoavd://oauth2redirect).
         manifestPlaceholders = [appAuthRedirectScheme: 'smartecoavd']
