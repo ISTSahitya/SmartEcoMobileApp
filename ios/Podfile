@@ -56,6 +56,34 @@ target 'Smart' do
   pod 'react-native-app-auth', :path => '../node_modules/react-native-app-auth', :modular_headers => true
   pod 'GoogleSignIn', :modular_headers => true
 
+  # Same problem, different cause. Firebase ships some pods as Swift
+  # (FirebaseCoreInternal, FirebaseCoreExtension) and their dependencies as
+  # Objective-C. Building as static libraries, Swift can only import an ObjC
+  # pod that defines a module, so `pod install` stops with:
+  #
+  #   The Swift pod `FirebaseCoreInternal` depends upon `GoogleUtilities`,
+  #   which does not define modules.
+  #
+  # CocoaPods offers `use_modular_headers!` globally as the blunt fix. It is
+  # avoided deliberately: it would flip module generation on for every pod in
+  # the project, including React Native's own and the New Architecture codegen
+  # pods, which is a large blast radius for a Firebase-only problem — and this
+  # Podfile already establishes the targeted form directly above.
+  #
+  # No version constraints: these are all transitive dependencies of
+  # RNFBMessaging, so CocoaPods still resolves the versions: naming them here
+  # only attaches the modular_headers flag. This is the whole FirebaseMessaging
+  # dependency graph rather than just the pod named in the error, so a second
+  # Swift-imports-ObjC pairing further down cannot cause another round trip.
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'FirebaseCore', :modular_headers => true
+  pod 'FirebaseCoreInternal', :modular_headers => true
+  pod 'FirebaseCoreExtension', :modular_headers => true
+  pod 'FirebaseInstallations', :modular_headers => true
+  pod 'GoogleDataTransport', :modular_headers => true
+  pod 'PromisesObjC', :modular_headers => true
+  pod 'nanopb', :modular_headers => true
+
   use_react_native!(
     :path => config[:reactNativePath],
     :app_path => "#{Pod::Config.instance.installation_root}/.."
