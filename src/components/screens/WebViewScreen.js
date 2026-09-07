@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   PermissionsAndroid,
+  AppState,
   BackHandler,
   Alert,
   Linking,
@@ -9,7 +10,6 @@ import {
   View,
   Text,
   NativeModules,
-  AppState,
   Animated,
   ActivityIndicator,
 } from 'react-native';
@@ -22,7 +22,7 @@ import ReactNativeBlobUtil from 'react-native-blob-util';
 import Share from 'react-native-share';
 import RNPrint from 'react-native-print';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
-import useVersionCheck from '../../hooks/useVersionCheck';
+import useAppUpdate from '../../hooks/useAppUpdate';
 import UpdateModal from '../UpdateModal';
 import {
   scanForDevices,
@@ -91,13 +91,13 @@ const WebViewScreen = ({ route }) => {
   const [pendingDeepLink, setPendingDeepLink] = useState(null);
   const splashOpacity = useRef(new Animated.Value(1)).current;
   const {
-    modalVisible,
-    updateType,
-    updateData,
+    updateInfo,
+    showAppUpdateModal,
+    dismissAppUpdate,
+    openAppStore,
     handleVersionData,
-    dismiss,
-    skipVersion,
-  } = useVersionCheck();
+  } = useAppUpdate();
+  
   const lastVersionData = useRef(null);
 
   const splashOnly = route.params?.splashOnly ?? false;
@@ -1065,11 +1065,10 @@ const WebViewScreen = ({ route }) => {
         </Animated.View>
       )}
       <UpdateModal
-        visible={modalVisible}
-        type={updateType}
-        data={updateData}
-        onDismiss={dismiss}
-        onSkipVersion={skipVersion}
+        visible={showAppUpdateModal}
+        data={updateInfo}
+        onDismiss={dismissAppUpdate}
+        onUpdate={openAppStore}
       />
     </View>
   );

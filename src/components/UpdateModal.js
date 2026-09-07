@@ -5,33 +5,10 @@ import {
   Text,
   Pressable,
   StyleSheet,
-  Linking,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import DeviceInfo from 'react-native-device-info';
 
-const UpdateModal = ({ visible, type, data, onDismiss, onSkipVersion }) => {
-  const isForce = type === 'force';
-  const isMaintenance = type === 'maintenance';
-
-  const handleUpdate = () => {
-    const url = data?.storeUrl || 'https://play.google.com/store/apps/details?id=com.smartecoenterprise.app';
-    Linking.openURL(url).catch(() => {
-      Linking.openURL('https://play.google.com/store');
-    });
-  };
-
-  const title = isMaintenance
-    ? 'Under Maintenance'
-    : isForce
-      ? 'Update Required'
-      : 'Update Available';
-
-  const message = isMaintenance
-    ? 'We are performing scheduled maintenance to improve your experience. Please check back shortly.'
-    : isForce
-      ? 'This version is no longer supported.\nPlease update to continue using SmartEco Enterprise.'
-      : 'A newer version of SmartEco Enterprise is available.\nUpdate now for the best experience.';
+const UpdateModal = ({ visible, data, onDismiss, onUpdate }) => {
 
   return (
     <Modal
@@ -40,7 +17,6 @@ const UpdateModal = ({ visible, type, data, onDismiss, onSkipVersion }) => {
       animationType="fade"
       statusBarTranslucent
       onRequestClose={() => {
-        if (isForce || isMaintenance) return;
         onDismiss?.();
       }}
     >
@@ -56,39 +32,39 @@ const UpdateModal = ({ visible, type, data, onDismiss, onSkipVersion }) => {
 
           <View style={styles.content}>
             {/* Title */}
-            <Text style={styles.title}>{title}</Text>
+            <Text style={styles.title}>New version available</Text>
 
             {/* Version badge */}
-            {!isMaintenance && data?.latestVersion && (
+            {data?.latestVersion && (
               <View style={styles.versionRow}>
                 <View style={styles.versionBadgeCurrent}>
-                  <Text style={styles.versionBadgeCurrentText}>Current: v{DeviceInfo.getVersion()}</Text>
+                  <Text style={styles.versionBadgeCurrentText}>Current version: {data.currentVersion}</Text>
                 </View>
                 <View style={styles.arrow}>
                   <Text style={styles.arrowText}>→</Text>
                 </View>
                 <View style={styles.versionBadgeNew}>
-                  <Text style={styles.versionBadgeNewText}>v{data.latestVersion}</Text>
+                  <Text style={styles.versionBadgeNewText}>Latest version: {data.latestVersion}</Text>
                 </View>
               </View>
             )}
 
             {/* Message */}
-            <Text style={styles.message}>{message}</Text>
+            <Text style={styles.message}>
+              A new version of SmartEco Enterprise is available. Please update to get the latest features and improvements.
+            </Text>
 
-            {/* Release notes */}
-            {data?.releaseNotes && !isMaintenance && (
-              <View style={styles.releaseNotesContainer}>
-                <Text style={styles.releaseNotesLabel}>What's New</Text>
-                <Text style={styles.releaseNotesText}>{data.releaseNotes}</Text>
-              </View>
-            )}
-
-            {/* Update button */}
-            {!isMaintenance && (
+            <View style={styles.secondaryActions}>
               <Pressable
-                onPress={handleUpdate}
-                style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1, width: '100%' }]}
+                onPress={onDismiss}
+                style={({ pressed }) => [styles.actionButton, styles.secondaryBtn, { opacity: pressed ? 0.8 : 1 }]}
+              >
+                <Text style={styles.remindText}>Exit</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={onUpdate}
+                style={({ pressed }) => [styles.actionButton, styles.updateAction, { opacity: pressed ? 0.9 : 1 }]}
               >
                 <LinearGradient
                   colors={['#0F796B', '#4EBD84']}
@@ -99,33 +75,7 @@ const UpdateModal = ({ visible, type, data, onDismiss, onSkipVersion }) => {
                   <Text style={styles.updateButtonText}>Update Now</Text>
                 </LinearGradient>
               </Pressable>
-            )}
-
-            {/* Secondary actions — soft update only */}
-            {!isForce && !isMaintenance && (
-              <View style={styles.secondaryActions}>
-                <Pressable
-                  onPress={onDismiss}
-                  style={({ pressed }) => [styles.secondaryBtn, { opacity: pressed ? 0.6 : 1 }]}
-                >
-                  <Text style={styles.remindText}>Later</Text>
-                </Pressable>
-
-                <View style={styles.dot} />
-
-                <Pressable
-                  onPress={onSkipVersion}
-                  style={({ pressed }) => [styles.secondaryBtn, { opacity: pressed ? 0.6 : 1 }]}
-                >
-                  <Text style={styles.skipText}>Skip This Version</Text>
-                </Pressable>
-              </View>
-            )}
-
-            {/* Force update subtle text */}
-            {isForce && (
-              <Text style={styles.forceHint}>This update is required to continue</Text>
-            )}
+            </View>
           </View>
         </View>
       </View>
@@ -239,27 +189,38 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   updateButton: {
-    paddingVertical: 14,
+    minHeight: 48,
     borderRadius: 12,
+    paddingHorizontal: 12,
     alignItems: 'center',
     width: '100%',
+    justifyContent: 'center',
   },
   updateButtonText: {
     color: '#fff',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     letterSpacing: 0.3,
   },
   secondaryActions: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 16,
     gap: 12,
+    width: '100%',
+  },
+  actionButton: {
+    flex: 1,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
   },
   secondaryBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 4,
+    flex: 0.5,
+    borderColor: '#B7DED3',
+    backgroundColor: '#F0FAF7',
   },
   dot: {
     width: 3,
@@ -268,7 +229,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#D1D5DB',
   },
   remindText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '500',
     color: '#0F796B',
   },
