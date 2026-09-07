@@ -2,6 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Push notifications. "development" is the correct value to COMMIT: the
+	     distribution provisioning profile substitutes "production" at archive
+	     time, so a TestFlight/App Store build gets the production APNs
+	     environment without this file changing.
+
+	     The matching Push Notifications capability must also be enabled on the
+	     App ID (org.ist.smartecoenterprise) in the Apple Developer portal, and
+	     the provisioning profiles regenerated afterwards, because adding a capability
+	     invalidates the existing ones. -->
+	<key>aps-environment</key>
+	<string>development</string>
 	<key>com.apple.developer.networking.wifi-info</key>
 	<true/>
 	<key>com.apple.developer.applesignin</key>

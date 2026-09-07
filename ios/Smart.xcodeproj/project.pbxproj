@@ -12,6 +12,7 @@
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		B50D327D7F30D180573F3E44 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		FCE0000000000000000000F1 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = FCE0000000000000000000F2 /* GoogleService-Info.plist */; };
 		DA7FE5059B45D6EC5A425919 /* libPods-Smart.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 9EED6982DFD9AD42C590F1EA /* libPods-Smart.a */; };
 		E9182696134644A3A4EBC012 /* Colors.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0644FA44499D473B9488EB3B /* Colors.xcassets */; };
 		F36F2F00CE6E40D08CF3171B /* BootSplash.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 8C310B2B13A64D7A84AD3D26 /* BootSplash.storyboard */; };
@@ -24,6 +25,7 @@
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Smart/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Smart/Info.plist; sourceTree = "<group>"; };
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = Smart/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		FCE0000000000000000000F2 /* GoogleService-Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = "GoogleService-Info.plist"; path = "Smart/GoogleService-Info.plist"; sourceTree = "<group>"; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Smart/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = Smart/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		8C310B2B13A64D7A84AD3D26 /* BootSplash.storyboard */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = BootSplash.storyboard; path = Smart/BootSplash.storyboard; sourceTree = "<group>"; };
@@ -53,6 +55,7 @@
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
+				FCE0000000000000000000F2 /* GoogleService-Info.plist */,
 				8C310B2B13A64D7A84AD3D26 /* BootSplash.storyboard */,
 				0644FA44499D473B9488EB3B /* Colors.xcassets */,
 				B8CD433D85B764A49CA5A41F /* onboarding */,
@@ -173,6 +176,7 @@
 				F36F2F00CE6E40D08CF3171B /* BootSplash.storyboard in Resources */,
 				E9182696134644A3A4EBC012 /* Colors.xcassets in Resources */,
 				B50D327D7F30D180573F3E44 /* PrivacyInfo.xcprivacy in Resources */,
+				FCE0000000000000000000F1 /* GoogleService-Info.plist in Resources */,
 				5DC6F983B3DC943E20776F6E /* onboarding in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

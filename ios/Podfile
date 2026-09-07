@@ -12,6 +12,11 @@ linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil
   Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
   use_frameworks! :linkage => linkage.to_sym
+  # Only meaningful under use_frameworks!. The Firebase pods ship static
+  # binaries, and mixing them into dynamic frameworks without this produces
+  # duplicate-symbol and "class implemented in both" failures at load time.
+  # The default build (no USE_FRAMEWORKS) uses static libraries and ignores it.
+  $RNFirebaseAsStaticFramework = true
 end
 
 target 'Smart' do

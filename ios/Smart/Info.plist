@@ -85,6 +85,13 @@
 	<string>SmartEco Enterprise needs access to your photo library so you can save and share images such as device QR codes.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<!-- Lets APNs wake the app to deliver a notification while it is
+		     backgrounded or suspended. Pairs with the Background Modes ->
+		     Remote notifications capability in Xcode. -->
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>BootSplash</string>
 	<key>UIRequiredDeviceCapabilities</key>

@@ -39,8 +39,53 @@ import {
   GOOGLE_IOS_CLIENT_ID,
   MICROSOFT,
 } from '../../config/socialAuth';
+import { WEB_BASE_URL, WEB_BASE_PATH, WEB_HOST } from '../../config/appConfig';
+import usePushNotifications from '../../hooks/usePushNotifications';
 
 const { VpnModule } = NativeModules;
+
+/**
+ * Normalise anything that can name a destination — a Universal Link URL or a
+ * bare `deep_link_path` from a push payload — into a path relative to the web
+ * app.
+ *
+ * Replaces the exact-match compare the Universal Link handler used to do. That
+ * compare required a trailing slash (`/SmartecoAvd/dashboard/alerts/`) while
+ * every link the web app actually produces has none, so a normally-formed
+ * alerts link fell straight through and did nothing.
+ *
+ * Returns null for anything off-host or malformed — the result is fed into the
+ * WebView's location, so this is also the guard against a push payload pointing
+ * the trusted app shell at somebody else's site.
+ */
+export const toWebPath = value => {
+  if (!value || typeof value !== 'string') return null;
+
+  let path;
+  if (value.startsWith('/')) {
+    // A path from a push payload. Reject protocol-relative '//host' — it looks
+    // like a path but is a URL.
+    if (value.startsWith('//')) return null;
+    path = value;
+  } else {
+    try {
+      const parsed = new URL(value);
+      if (parsed.protocol !== 'https:' || parsed.hostname !== WEB_HOST) return null;
+      path = parsed.pathname + parsed.search;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  if (path.startsWith(WEB_BASE_PATH)) {
+    path = path.slice(WEB_BASE_PATH.length) || '/';
+  }
+  // Trailing slashes are cosmetic, and were the whole reason the old compare
+  // missed. Normalise them away, but never turn '/' into ''.
+  if (path.length > 1) path = path.replace(/\/+$/, '');
+
+  return path.startsWith('/') ? path : `/${path}`;
+};
 
 // iOS zooms the page in whenever an input with font-size < 16px is focused.
 // Injecting a stylesheet that enforces a 16px minimum on form controls stops
@@ -154,22 +199,38 @@ const WebViewScreen = ({ route }) => {
 
   const webviewRef = useRef(null);
 
-  // Pending Universal Link stored while onboarding/splash is active.
+  // Pending destination (a web PATH, e.g. '/dashboard/alerts?alert=12') stored
+  // while onboarding/splash is active. Holds a path rather than a full URL so a
+  // Universal Link and a push payload can share this one channel.
   const pendingDeepLinkRef = useRef(null);
 
-  const navigateWebviewTo = (target) => {
-    if (!target) return;
+  const navigateWebviewTo = (path) => {
+    if (!path) return;
     if (webviewRef.current && typeof webviewRef.current.injectJavaScript === 'function') {
-      const js = `window.location.href = ${JSON.stringify(target)}; true;`;
+      // Prefer a client-side route change. PushRegistrar installs
+      // __smartecoNavigate once the dashboard has mounted; falling back to
+      // location.href is correct but costs a full reload — a white flash and a
+      // fresh auth check — so it is the cold-start path only.
+      const js = `
+        (function () {
+          var p = ${JSON.stringify(path)};
+          if (typeof window.__smartecoNavigate === 'function') {
+            window.__smartecoNavigate(p);
+          } else {
+            window.location.href = ${JSON.stringify(WEB_BASE_URL)} + p;
+          }
+        })();
+        true;
+      `;
       try {
         webviewRef.current.injectJavaScript(js);
-        console.log('[Universal Link] Navigated WebView to', target);
+        console.log('[Deep Link] Navigated WebView to', path);
       } catch (e) {
-        console.log('[Universal Link] injectJavaScript failed', e);
-        pendingDeepLinkRef.current = target;
+        console.log('[Deep Link] injectJavaScript failed', e);
+        pendingDeepLinkRef.current = path;
       }
     } else {
-      pendingDeepLinkRef.current = target;
+      pendingDeepLinkRef.current = path;
     }
   };
 
@@ -178,23 +239,21 @@ const WebViewScreen = ({ route }) => {
     const handleIncoming = (evtOrUrl) => {
       const incoming = typeof evtOrUrl === 'string' ? evtOrUrl : evtOrUrl?.url;
       if (!incoming) return;
-      console.log('[Universal Link] Received:182', incoming);
-      try {
-        const parsed = new URL(incoming);
-        if (
-          parsed.protocol === 'https:' &&
-          parsed.hostname === 'app.smarteco.ai' &&
-          parsed.pathname === '/SmartecoAvd/dashboard/alerts/'
-        ) {
-          const target = parsed.origin + parsed.pathname + parsed.search + parsed.hash;
-          if (showSplash) {
-            pendingDeepLinkRef.current = target;
-            console.log('[Universal Link] Deferred until splash done:', target);
-          } else {
-            navigateWebviewTo(target);
-          }
-        }
-      } catch (_) {}
+      console.log('[Universal Link] Received:', incoming);
+      // toWebPath accepts any in-app link, not just the alerts page, and
+      // tolerates the trailing slash that the old exact-match compare required
+      // but real links never carry.
+      const path = toWebPath(incoming);
+      if (!path) {
+        console.log('[Universal Link] Not an in-app link, ignoring:', incoming);
+        return;
+      }
+      if (showSplash) {
+        pendingDeepLinkRef.current = path;
+        console.log('[Universal Link] Deferred until splash done:', path);
+      } else {
+        navigateWebviewTo(path);
+      }
     };
 
     // Cold start
@@ -215,6 +274,24 @@ const WebViewScreen = ({ route }) => {
       navigateWebviewTo(target);
     }
   }, [showSplash]);
+
+  /* Push notifications. All the FCM mechanics live in the hook and the service
+     behind it; this screen only says where a tap should land and forwards a
+     rotated token to the web app. Notification taps reuse the same
+     pendingDeepLinkRef channel as Universal Links above — which is also what
+     handles the cold-start race, since getInitialNotification() resolves long
+     before the WebView is ready and the effect above drains the ref once the
+     splash clears. */
+  const push = usePushNotifications({
+    onDeepLink: path => {
+      if (showSplash) {
+        pendingDeepLinkRef.current = path;
+      } else {
+        navigateWebviewTo(path);
+      }
+    },
+    onTokenRefresh: info => sendToWeb({ action: 'PUSH_TOKEN_REFRESHED', ...info }),
+  });
 
   // iOS has no public deep link to the system Wi-Fi settings (sendIntent is
   // Android-only). App-Prefs:root=WIFI opens the Wi-Fi pane on most iOS
@@ -470,6 +547,26 @@ const WebViewScreen = ({ route }) => {
             isIOS,
           });
 
+          break;
+
+        /* ---- Push notifications ----
+           Each of these resolves to a reply object the hook builds, so the
+           handling here stays a one-liner and matches the Android branch. */
+        case 'PUSH_REGISTER':
+          push.register().then(sendToWeb);
+          break;
+
+        case 'PUSH_UNREGISTER':
+          push.unregister().then(sendToWeb);
+          break;
+
+        case 'PUSH_PERMISSION_STATUS':
+          push.permissionStatus().then(sendToWeb);
+          break;
+
+        case 'PUSH_OPEN_SETTINGS':
+          // Fire and forget — the web app cannot observe the outcome anyway.
+          push.openNotificationSettings();
           break;
 
         case 'DOWNLOAD_FILE': {

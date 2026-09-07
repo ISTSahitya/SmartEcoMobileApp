@@ -2,6 +2,7 @@ import UIKit
 import React
 import React_RCTAppDelegate
 import ReactAppDependencyProvider
+import FirebaseCore
 import GoogleSignIn
 // react-native-app-auth's podspec has no explicit module_name, so CocoaPods
 // derives it from the pod name "react-native-app-auth" by replacing hyphens
@@ -26,6 +27,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate, RNAppAuthAuthorizationFlo
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    // Must run before React Native starts, and before any Firebase module is
+    // touched from JS. @react-native-firebase has NO auto-configure hook of its
+    // own -- it expects the native bootstrap to have done this (see the comment
+    // in RNFBAppModule.mm) -- so without this line the app crashes on launch
+    // with "The default FirebaseApp instance must be configured first".
+    //
+    // It reads ios/Smart/GoogleService-Info.plist out of the app bundle, which
+    // is why that file has to be a member of the Resources build phase and not
+    // merely present on disk.
+    FirebaseApp.configure()
+
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()
