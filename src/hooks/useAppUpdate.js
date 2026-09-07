@@ -18,13 +18,13 @@ const useAppUpdate = () => {
 
       console.log('[App Update] Update info:', appUpdate);
 
-      // if (!appUpdate?.updateAvailable) {
-      //   updateInfoRef.current = null;
-      //   setUpdateInfo(null);
-      //   setShowAppUpdateModal(false);
+      if (!appUpdate?.updateAvailable) {
+        updateInfoRef.current = null;
+        setUpdateInfo(null);
+        setShowAppUpdateModal(false);
 
-      //   return null;
-      // }
+        return null;
+      }
 
       updateInfoRef.current = appUpdate;
       setUpdateInfo(appUpdate);
