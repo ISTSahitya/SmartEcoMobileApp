@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools">
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -7,6 +8,10 @@
   <uses-permission android:name="android.permission.CAMERA" />
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
   <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+  <!-- Push notifications. Android 13 (API 33) made this a runtime permission;
+       below 33 it is granted at install time and requestPermission() is a no-op. -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <!-- Saving downloads to public storage on Android <= 9 (API 28). API 29+ uses MediaStore, no permission needed. -->
   <uses-permission
     android:name="android.permission.WRITE_EXTERNAL_STORAGE"
@@ -60,5 +65,41 @@
       </intent-filter>
 
     </activity>
+
+    <!-- Defaults FCM applies when it draws a notification itself, i.e. whenever
+         the app is backgrounded or killed.
+
+         The channel is NAMED here but CREATED in JS (see
+         src/services/pushNotifications.js). Android 8+ will not show a
+         notification whose channel does not exist — it silently reroutes to an
+         auto-created "Miscellaneous" channel — so this id, the one in
+         pushNotifications.js, and `fcm_default_channel_id` on the API must all
+         agree. -->
+    <!-- tools:replace is required on the two below: @react-native-firebase/messaging
+         declares both in its own library manifest (an empty channel id and
+         @color/white), and the merger treats a differing value as a conflict
+         rather than an override. -->
+    <meta-data
+      android:name="com.google.firebase.messaging.default_notification_channel_id"
+      android:value="@string/default_notification_channel_id"
+      tools:replace="android:value" />
+
+    <!-- Must be a white-on-transparent silhouette. Android 5+ renders any
+         coloured notification icon as a solid white square, which is why the
+         launcher icon cannot be reused here. RNFirebase does not set a default
+         icon, so this one needs no tools:replace. -->
+    <meta-data
+      android:name="com.google.firebase.messaging.default_notification_icon"
+      android:resource="@drawable/ic_notification" />
+
+    <meta-data
+      android:name="com.google.firebase.messaging.default_notification_color"
+      android:resource="@color/notification_color"
+      tools:replace="android:resource" />
+
+    <!-- No <service> declaration is needed: @react-native-firebase/messaging
+         ships its own ReactNativeFirebaseMessagingService in its library
+         manifest, which is merged in automatically. MainActivity is already
+         launchMode="singleTask", which is what notification taps require. -->
   </application>
 </manifest>

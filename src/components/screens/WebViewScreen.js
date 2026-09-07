@@ -33,19 +33,63 @@ import {
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { authorize } from 'react-native-app-auth';
 import { GOOGLE_WEB_CLIENT_ID, MICROSOFT } from '../../config/socialAuth';
+import { WEB_BASE_URL, WEB_BASE_PATH, WEB_HOST } from '../../config/appConfig';
+import usePushNotifications from '../../hooks/usePushNotifications';
 
 const { VpnModule } = NativeModules;
 
 const ONBOARDING_BASE_URI = 'file:///android_asset/onboarding/index.html';
+
+/**
+ * Normalise anything that can name a destination — an App Link URL or a bare
+ * `deep_link_path` from a push payload — into a path relative to the web app.
+ *
+ * Replaces an exact-match compare against a single hardcoded alerts URL. That
+ * compare required a trailing slash (`/SmartecoAvd/dashboard/alerts/`) while
+ * the URL it navigated to had none, so any normally-formed alerts App Link fell
+ * straight through and did nothing.
+ *
+ * Returns null for anything off-host or malformed — the result is fed straight
+ * into the WebView's location, so this is also the guard against a push payload
+ * pointing the trusted app shell at somebody else's site.
+ */
+export const toWebPath = value => {
+  if (!value || typeof value !== 'string') return null;
+
+  let path;
+  if (value.startsWith('/')) {
+    // A path from a push payload. Reject protocol-relative '//host' — it looks
+    // like a path but is a URL.
+    if (value.startsWith('//')) return null;
+    path = value;
+  } else {
+    try {
+      const parsed = new URL(value);
+      if (parsed.protocol !== 'https:' || parsed.hostname !== WEB_HOST) return null;
+      path = parsed.pathname + parsed.search;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  if (path.startsWith(WEB_BASE_PATH)) {
+    path = path.slice(WEB_BASE_PATH.length) || '/';
+  }
+  // Trailing slashes are cosmetic, and were the whole reason the old compare
+  // missed. Normalise them away, but never turn '/' into ''.
+  if (path.length > 1) path = path.replace(/\/+$/, '');
+
+  return path.startsWith('/') ? path : `/${path}`;
+};
 
 const WebViewScreen = ({ route }) => {
   const insets = useSafeAreaInsets();
   const [canGoBack, setCanGoBack] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
+  /** A web path ('/dashboard/alerts?alert=12') waiting for the WebView to be ready. */
   const [pendingDeepLink, setPendingDeepLink] = useState(null);
   const splashOpacity = useRef(new Animated.Value(1)).current;
-  const ALERTS_WEB_URL = 'https://app.smarteco.ai/SmartecoAvd/dashboard/alerts';
   const {
     modalVisible,
     updateType,
@@ -83,22 +127,15 @@ const WebViewScreen = ({ route }) => {
 
     console.log('[Deep Link] Received:', url);
 
-    try {
-      const parsedUrl = new URL(url);
-
-      const isAlertsAppLink =
-        parsedUrl.protocol === 'https:' &&
-        parsedUrl.hostname === 'app.smarteco.ai' && 
-        parsedUrl.pathname === '/SmartecoAvd/dashboard/alerts/';
-
-      if (isAlertsAppLink) {
-        console.log('[Deep Link] Alerts link received');
-        setIsLoading(false);
-        setPendingDeepLink('alerts');
-      }
-    } catch (error) {
-      console.log('[Deep Link] Invalid URL:', url, error);
+    const path = toWebPath(url);
+    if (!path) {
+      console.log('[Deep Link] Not an in-app link, ignoring:', url);
+      return;
     }
+
+    console.log('[Deep Link] Resolved to path:', path);
+    setIsLoading(false);
+    setPendingDeepLink(path);
   }, []);
 
   useEffect(() => {
@@ -125,25 +162,49 @@ const WebViewScreen = ({ route }) => {
 
   const shouldShowLoadingOverlay = isLoading && !showSplash && !pendingDeepLink;
 
+  /* Navigate the WebView to a pending deep link once it is actually ready.
+     The `!showSplash` guard is what handles the cold-start race: a notification
+     tap can resolve long before the WebView has mounted and loaded, so the path
+     is held in state until the splash has faded rather than injected into a
+     WebView that would discard it. */
   useEffect(() => {
-    if (!showSplash && pendingDeepLink === 'alerts') {
-      const timer = setTimeout(() => {
-        webviewRef.current?.injectJavaScript(`
-          window.location.href = ${JSON.stringify(ALERTS_WEB_URL)};
-          true;
-        `);
+    if (showSplash || !pendingDeepLink) return;
 
-        console.log(`[Deep Link] Injected JavaScript to navigate to alerts:
-          window.location.href = ${ALERTS_WEB_URL};
-          true;
-        `);
+    const path = pendingDeepLink;
+    const timer = setTimeout(() => {
+      // Prefer a client-side route change. PushRegistrar installs
+      // __smartecoNavigate once the dashboard has mounted; falling back to
+      // location.href is correct but costs a full reload — a white flash and a
+      // fresh auth check — so it is the cold-start path only.
+      webviewRef.current?.injectJavaScript(`
+        (function () {
+          var p = ${JSON.stringify(path)};
+          if (typeof window.__smartecoNavigate === 'function') {
+            window.__smartecoNavigate(p);
+          } else {
+            window.location.href = ${JSON.stringify(WEB_BASE_URL)} + p;
+          }
+        })();
+        true;
+      `);
+      console.log('[Deep Link] Navigated WebView to:', path);
+      setPendingDeepLink(null);
+    }, 300);
 
-        setPendingDeepLink(null);
-      }, 300);
-
-      return () => clearTimeout(timer);
-    }
+    return () => clearTimeout(timer);
   }, [showSplash, pendingDeepLink]);
+
+  /* Push notifications. All the FCM mechanics live in the hook and the service
+     behind it; this screen only says where a tap should land and forwards a
+     rotated token to the web app. Notification taps reuse the same
+     pendingDeepLink path as App Links above. */
+  const push = usePushNotifications({
+    onDeepLink: path => {
+      setIsLoading(false);
+      setPendingDeepLink(path);
+    },
+    onTokenRefresh: info => sendToWeb({ action: 'PUSH_TOKEN_REFRESHED', ...info }),
+  });
 
   // Re-check version when app comes to foreground
   useEffect(() => {
@@ -431,6 +492,26 @@ const WebViewScreen = ({ route }) => {
 
         case 'SCAN_WIFI_NETWORKS':
           scanWifiNetworks();
+          break;
+
+        /* ---- Push notifications ----
+           Each of these resolves to a reply object the hook builds, so the
+           handling here stays a one-liner and ports to the iOS branch trivially. */
+        case 'PUSH_REGISTER':
+          push.register().then(sendToWeb);
+          break;
+
+        case 'PUSH_UNREGISTER':
+          push.unregister().then(sendToWeb);
+          break;
+
+        case 'PUSH_PERMISSION_STATUS':
+          push.permissionStatus().then(sendToWeb);
+          break;
+
+        case 'PUSH_OPEN_SETTINGS':
+          // Fire and forget — the web app cannot observe the outcome anyway.
+          push.openNotificationSettings();
           break;
 
         default:
@@ -927,7 +1008,7 @@ const WebViewScreen = ({ route }) => {
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
-        source={{ uri: 'https://app.smarteco.ai/SmartecoAvd' }}
+        source={{ uri: WEB_BASE_URL }}
         style={[styles.webview, { backgroundColor: '#fff' }]}
         contentInsetAdjustmentBehavior="automatic"
         androidLayerType="hardware"

@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "973195332590",
+    "firebase_url": "https://smartecoiot-default-rtdb.firebaseio.com",
+    "project_id": "smartecoiot",
+    "storage_bucket": "smartecoiot.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:973195332590:android:017939ab83b451bd2d9cff",
+        "android_client_info": {
+          "package_name": "com.smartecoenterprise.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "973195332590-6gb4rgv9g3bn0tk4jaiprfbaho10mh6k.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDb-LAa-igvhFH0Nh8xo_re3lkNkPL-nlY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "973195332590-6gb4rgv9g3bn0tk4jaiprfbaho10mh6k.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "973195332590-1fk3fq7p6q5gcp64geefvfdoahcd22f2.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "org.ist.smartecoenterprise"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

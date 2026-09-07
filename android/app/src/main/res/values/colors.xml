@@ -1,3 +1,5 @@
 <resources>
     <color name="bootsplash_background">#ffffff</color>
+    <!-- Accent Android tints the notification icon and app name with. -->
+    <color name="notification_color">#0F796B</color>
 </resources>

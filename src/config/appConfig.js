@@ -1,3 +1,21 @@
+/**
+ * Base URL of the web app this WebView wraps.
+ *
+ * The ONE value that legitimately differs between the Android and iOS
+ * branches (iOS points at atlas.smartgeoapps.com). Push payloads therefore
+ * carry a PATH, never a full URL, and the native side prefixes this — so the
+ * same notification works on both builds. Keep it here, not inlined in
+ * WebViewScreen, so porting a feature across branches never drags the wrong
+ * host with it.
+ */
+export const WEB_BASE_URL = 'https://app.smarteco.ai/SmartecoAvd';
+
+/** Path prefix the web app is served under, stripped when normalising links. */
+export const WEB_BASE_PATH = '/SmartecoAvd';
+
+/** Hostname accepted by the App Link handler. */
+export const WEB_HOST = 'app.smarteco.ai';
+
 const APP_CONFIG = {
   // AsyncStorage keys for version check
   STORAGE_KEYS: {

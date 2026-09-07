@@ -1,6 +1,9 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
+// Must come after com.android.application. Reads android/app/google-services.json,
+// whose package_name has to match applicationId below or the build fails.
+apply plugin: "com.google.gms.google-services"
 
 // Load release signing credentials from android/keystore.properties (gitignored).
 // Absent on machines/CI without the keystore, in which case release falls back to debug signing.
