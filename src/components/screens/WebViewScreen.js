@@ -23,7 +23,9 @@ import Share from 'react-native-share';
 import RNPrint from 'react-native-print';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
 import useVersionCheck from '../../hooks/useVersionCheck';
+import useAppUpdate from '../../hooks/useAppUpdate';
 import UpdateModal from '../UpdateModal';
+import AppUpdateModal from '../AppUpdateModal';
 import { ONBOARDING_BASE_URI, ONBOARDING_READ_ACCESS } from '../../utils/onboarding';
 import {
   scanForDevices,
@@ -106,6 +108,12 @@ const WebViewScreen = ({ route }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
   const splashOpacity = useRef(new Animated.Value(1)).current;
+  const {
+    updateInfo,
+    showAppUpdateModal,
+    dismissAppUpdate,
+    openAppStore,
+}  = useAppUpdate();
   const {
     modalVisible,
     updateType,
@@ -1229,6 +1237,14 @@ const WebViewScreen = ({ route }) => {
         data={updateData}
         onDismiss={dismiss}
         onSkipVersion={skipVersion}
+      />
+
+      <AppUpdateModal
+        visible={showAppUpdateModal}
+        currentVersion={updateInfo?.currentVersion || 'Unknown'}
+        latestVersion={updateInfo?.latestVersion || 'Unknown'}
+        onUpdate={openAppStore}
+        onExit={dismissAppUpdate}
       />
     </View>
   );

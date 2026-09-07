@@ -11,9 +11,10 @@ import GoogleSignIn
 // Pods/Target Support Files/react-native-app-auth/ for the actual generated
 // module name and swap it in here.
 import react_native_app_auth
+import WatchConnectivity
 
 @main
-class AppDelegate: UIResponder, UIApplicationDelegate, RNAppAuthAuthorizationFlowManager {
+class AppDelegate: UIResponder, UIApplicationDelegate, RNAppAuthAuthorizationFlowManager, WCSessionDelegate {
   var window: UIWindow?
 
   var reactNativeDelegate: ReactNativeDelegate?
@@ -53,7 +54,41 @@ class AppDelegate: UIResponder, UIApplicationDelegate, RNAppAuthAuthorizationFlo
       launchOptions: launchOptions
     )
 
+    // Activate WatchConnectivity session to receive messages from Watch
+    if WCSession.isSupported() {
+      let session = WCSession.default
+      session.delegate = self
+      session.activate()
+    }
+
     return true
+  }
+
+  // MARK: - WCSessionDelegate
+  func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+    if let error = error {
+      print("WCSession activation failed: \(error)")
+    } else {
+      print("WCSession activationDidComplete: \(activationState.rawValue)")
+    }
+  }
+
+  func sessionDidBecomeInactive(_ session: WCSession) {
+    print("WCSession didBecomeInactive")
+  }
+
+  func sessionDidDeactivate(_ session: WCSession) {
+    print("WCSession didDeactivate - reactivating")
+    WCSession.default.activate()
+  }
+
+  func session(_ session: WCSession, didReceiveMessage message: [String : Any]) {
+    // Expect { "openURL": "smarteco://oauth-success?url=..." }
+    if let urlString = message["openURL"] as? String, let url = URL(string: urlString) {
+      DispatchQueue.main.async {
+        UIApplication.shared.open(url, options: [:], completionHandler: nil)
+      }
+    }
   }
 
   // Routes the Microsoft (AppAuth) redirect and the Google Sign-In callback,
