@@ -8,14 +8,40 @@ require Pod::Executable.execute_command('node', ['-p',
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
+# Resolve firebase-ios-sdk through CocoaPods instead of Swift Package Manager.
+# Must be set before any target block.
+#
+# @react-native-firebase v23+ defaults to pulling Firebase in over SPM, and
+# firebase-ios-sdk's SPM products are *automatic* libraries (plain
+# `.library(...)`, not `type: .dynamic`), so every RNFB pod statically embeds
+# its own copy of Firebase. Under static pod linkage those copies collide and
+# `pod install` refuses to continue:
+#
+#   [react-native-firebase] SPM + static linkage is not supported (target(s): Pods-Smart)
+#
+# Note this is NOT limited to `use_frameworks! :linkage => :static`, despite
+# what that message suggests. RNFB's check is on
+# `target_definition.build_type.static?`, which is also true for the plain
+# static-library default this project uses when USE_FRAMEWORKS is unset — so
+# the failure happens on a completely stock install.
+#
+# The alternative fix RNFB offers is `use_frameworks! :linkage => :dynamic`,
+# which is rejected here: it changes linkage for *every* pod in a project that
+# already carries workarounds for exactly this class of problem (modular
+# headers for GoogleSignIn and react-native-app-auth, the fmt C++17 override
+# below), and Hermes plus the New Architecture add more surface. Opting out of
+# SPM is the surgical change — it touches only how Firebase is resolved and
+# leaves every other pod exactly as it builds today.
+$RNFirebaseDisableSPM = true
+
 linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil
   Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
   use_frameworks! :linkage => linkage.to_sym
-  # Only meaningful under use_frameworks!. The Firebase pods ship static
-  # binaries, and mixing them into dynamic frameworks without this produces
-  # duplicate-symbol and "class implemented in both" failures at load time.
-  # The default build (no USE_FRAMEWORKS) uses static libraries and ignores it.
+  # Only read when use_frameworks! is on (the podspecs check `defined?`, not the
+  # value, so it must stay inside this block). Firebase ships static binaries;
+  # building the RNFB pods as static frameworks is the documented pairing and
+  # avoids duplicate-symbol and "class implemented in both" failures.
   $RNFirebaseAsStaticFramework = true
 end
 
