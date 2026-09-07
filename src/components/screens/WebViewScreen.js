@@ -346,10 +346,14 @@ const WebViewScreen = ({ route }) => {
       console.log('[WebView → Native] Received:', JSON.stringify(message));
 
       switch (message.action) {
-        case 'APP_VERSION_INFO':
-          lastVersionData.current = message.data;
-          handleVersionData(message.data);
+        case 'APP_VERSION_INFO': {
+          // Web sends the version flat on the message (e.g. { latestVersion })
+          // but may also nest it under `data`; support both shapes.
+          const versionData = message.data || message;
+          lastVersionData.current = versionData;
+          handleVersionData(versionData);
           break;
+        }
 
         case 'SOCIAL_LOGIN':
           handleSocialLogin(message.provider);
