@@ -952,8 +952,6 @@ const WebViewScreen = ({ route }) => {
   // Handles DOWNLOAD_FILE messages: writes the base64 payload to disk and saves it
   // to the public Downloads folder. Android only.
   const handleDownloadFile = async ({ fileName, mimeType, data }) => {
-    if (Platform.OS !== 'android') return;
-
     const safeName = (fileName && String(fileName).trim()) || `download_${Date.now()}`;
     const type = mimeType || 'application/octet-stream';
     const base64 = stripBase64Prefix(data);
@@ -967,6 +965,45 @@ const WebViewScreen = ({ route }) => {
       });
       return;
     }
+
+    /* iOS has no public Downloads folder to write into, so "save" is the share
+     * sheet — which is where "Save to Files" lives, alongside AirDrop, Mail and
+     * the rest. Writing to DocumentDir rather than CacheDir so the file is still
+     * there if the user picks an app that reads it asynchronously.
+     *
+     * This whole function used to return immediately unless Platform.OS was
+     * 'android', so on iOS an export produced nothing at all — no file, and no
+     * reply for the web side to report.
+     */
+    if (Platform.OS === 'ios') {
+      const path = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/${safeName}`;
+      try {
+        await ReactNativeBlobUtil.fs.writeFile(path, base64, 'base64');
+        await Share.open({
+          url: `file://${path}`,
+          type,
+          filename: safeName,
+          failOnCancel: false,
+        });
+        sendToWeb({
+          action: 'DOWNLOAD_FILE_RESULT',
+          success: true,
+          fileName: safeName,
+          message: `${safeName} ready to save.`,
+        });
+      } catch (e) {
+        console.log('DOWNLOAD_FILE (ios) error:', e);
+        sendToWeb({
+          action: 'DOWNLOAD_FILE_RESULT',
+          success: false,
+          fileName: safeName,
+          error: e instanceof Error ? e.message : 'Failed to save file.',
+        });
+      }
+      return;
+    }
+
+    if (Platform.OS !== 'android') return;
 
     try {
       const hasPermission = await requestLegacyStoragePermission();
@@ -1199,6 +1236,23 @@ const WebViewScreen = ({ route }) => {
         }}
         onError={() => setIsLoading(false)}
         onHttpError={() => setIsLoading(false)}
+        /* A target="_blank" link — the share view and the API docs both use one.
+         *
+         * In a browser those open a tab. Here, with no handler, WKWebView is
+         * asked to create a web view it is never given anywhere to put, so the
+         * link either does nothing or takes over the app's own view. Neither is
+         * what "open in new tab" means.
+         *
+         * Passing this hands us the URL instead, so we can send it to Safari.
+         */
+        onOpenWindow={syntheticEvent => {
+          const { targetUrl } = syntheticEvent.nativeEvent;
+          if (!targetUrl) return;
+          Linking.openURL(targetUrl).catch(err => {
+            console.log('[WebView] could not open externally:', targetUrl, err);
+            Alert.alert('Could not open link', targetUrl);
+          });
+        }}
         injectedJavaScriptBeforeContentLoaded={`
           document.documentElement.style.backgroundColor = '#fff';
           document.addEventListener('DOMContentLoaded', function() {
