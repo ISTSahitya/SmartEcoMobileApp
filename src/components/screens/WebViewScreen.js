@@ -1038,6 +1038,25 @@ const WebViewScreen = ({ route }) => {
         }}
         onError={() => setIsLoading(false)}
         onHttpError={() => setIsLoading(false)}
+        /* A target="_blank" link — the share view and the API docs both use one.
+         *
+         * In a browser those open a tab. Here, with no handler, Android hands
+         * the URL to a detached WebView that is never shown (see
+         * RNCWebChromeClient.onCreateWindow: it only attaches a client when
+         * this prop is present), so the link either does nothing or takes over
+         * the app's own view. Neither is what "open in new tab" means.
+         *
+         * Passing this makes the native side capture the URL and cancel the
+         * in-app load, leaving us to send it to the real browser.
+         */
+        onOpenWindow={syntheticEvent => {
+          const { targetUrl } = syntheticEvent.nativeEvent;
+          if (!targetUrl) return;
+          Linking.openURL(targetUrl).catch(err => {
+            console.log('[WebView] could not open externally:', targetUrl, err);
+            Alert.alert('Could not open link', targetUrl);
+          });
+        }}
         injectedJavaScriptBeforeContentLoaded={`
           document.documentElement.style.backgroundColor = '#fff';
           document.addEventListener('DOMContentLoaded', function() {
