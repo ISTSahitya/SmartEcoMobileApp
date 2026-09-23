@@ -206,6 +206,33 @@ const WebViewScreen = ({ route }) => {
   }, [canGoBack]);
 
   const webviewRef = useRef(null);
+  
+  // Intercept shared dashboard and developer documentation URLs.
+  // Open these URLs in the external browser instead of the SmartEco WebView.
+  // All other URLs will continue loading inside the WebView.
+  const handleShouldStartLoadWithRequest = useCallback((request) => {
+    const url = request.url;
+
+    // Shared dashboard URL
+    const isSharedDashboard =
+      url.startsWith('https://kiosk.smarteco.ai/SmartecoAvd/shared/');
+
+    // Developer documentation URL
+    const isDeveloperDocumentation =
+      url.startsWith('https://dev.smarteco.ai/SmartecoAvd/developers');
+
+    if (isSharedDashboard || isDeveloperDocumentation) {
+      Linking.openURL(url).catch(error => {
+        console.log('Failed to open external URL:', error);
+      });
+
+      // Prevent the URL from loading inside the WebView
+      return false;
+    }
+
+    // Allow all other URLs to load normally
+    return true;
+  }, []);
 
   // Pending destination (a web PATH, e.g. '/dashboard/alerts?alert=12') stored
   // while onboarding/splash is active. Holds a path rather than a full URL so a
@@ -949,13 +976,15 @@ const WebViewScreen = ({ route }) => {
     }
   };
 
-  // Handles DOWNLOAD_FILE messages: writes the base64 payload to disk and saves it
-  // to the public Downloads folder. Android only.
-  const handleDownloadFile = async ({ fileName, mimeType, data }) => {
+  // Writes the base64 payload to DocumentDir and opens a system document
+  // preview so the user can "Save to Files" or share it onward. iOS only —
+  // Android is handled in the separate android branch.
+  const handleDownloadFile = async ({ fileName, data }) => {
+    if (Platform.OS !== 'ios') return;
+ 
     const safeName = (fileName && String(fileName).trim()) || `download_${Date.now()}`;
-    const type = mimeType || 'application/octet-stream';
     const base64 = stripBase64Prefix(data);
-
+ 
     if (!base64) {
       sendToWeb({
         action: 'DOWNLOAD_FILE_RESULT',
@@ -965,97 +994,16 @@ const WebViewScreen = ({ route }) => {
       });
       return;
     }
-
-    /* iOS has no public Downloads folder to write into, so "save" is the share
-     * sheet — which is where "Save to Files" lives, alongside AirDrop, Mail and
-     * the rest. Writing to DocumentDir rather than CacheDir so the file is still
-     * there if the user picks an app that reads it asynchronously.
-     *
-     * This whole function used to return immediately unless Platform.OS was
-     * 'android', so on iOS an export produced nothing at all — no file, and no
-     * reply for the web side to report.
-     */
-    if (Platform.OS === 'ios') {
-      const path = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/${safeName}`;
-      try {
-        await ReactNativeBlobUtil.fs.writeFile(path, base64, 'base64');
-        await Share.open({
-          url: `file://${path}`,
-          type,
-          filename: safeName,
-          failOnCancel: false,
-        });
-        sendToWeb({
-          action: 'DOWNLOAD_FILE_RESULT',
-          success: true,
-          fileName: safeName,
-          message: `${safeName} ready to save.`,
-        });
-      } catch (e) {
-        console.log('DOWNLOAD_FILE (ios) error:', e);
-        sendToWeb({
-          action: 'DOWNLOAD_FILE_RESULT',
-          success: false,
-          fileName: safeName,
-          error: e instanceof Error ? e.message : 'Failed to save file.',
-        });
-      }
-      return;
-    }
-
-    if (Platform.OS !== 'android') return;
-
+ 
     try {
-      const hasPermission = await requestLegacyStoragePermission();
-      if (!hasPermission) {
-        sendToWeb({
-          action: 'DOWNLOAD_FILE_RESULT',
-          success: false,
-          fileName: safeName,
-          error: 'Storage permission denied.',
-        });
-        Alert.alert(
-          'Permission Required',
-          'Storage permission is needed to save files. Open settings to grant it?',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => Linking.openSettings() },
-          ],
-        );
-        return;
-      }
-
-      // Write to cache first, then publish into the public Downloads collection.
-      const tempPath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${safeName}`;
+      const tempPath = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/${safeName}`;
       await ReactNativeBlobUtil.fs.writeFile(tempPath, base64, 'base64');
-
-      if (Platform.Version >= 29) {
-        // Scoped storage: MediaStore handles the public Downloads entry, no permission needed.
-        await ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
-          { name: safeName, parentFolder: '', mimeType: type },
-          'Download',
-          tempPath,
-        );
-      } else {
-        // Legacy: copy into the public Downloads dir and register with Download Manager.
-        const destPath = `${ReactNativeBlobUtil.fs.dirs.LegacyDownloadDir}/${safeName}`;
-        await ReactNativeBlobUtil.fs.cp(tempPath, destPath);
-        ReactNativeBlobUtil.android.addCompleteDownload({
-          title: safeName,
-          description: 'Download complete',
-          mime: type,
-          path: destPath,
-          showNotification: true,
-        });
-      }
-
-      ReactNativeBlobUtil.fs.unlink(tempPath).catch(() => {});
-
+      await ReactNativeBlobUtil.ios.previewDocument(tempPath);
       sendToWeb({
         action: 'DOWNLOAD_FILE_RESULT',
         success: true,
         fileName: safeName,
-        message: `${safeName} saved to Downloads.`,
+        message: `${safeName} is ready to save.`,
       });
     } catch (e) {
       console.log('DOWNLOAD_FILE error:', e);
@@ -1205,6 +1153,7 @@ const WebViewScreen = ({ route }) => {
         androidLayerType="hardware"
         cacheEnabled={true}
         cacheMode="LOAD_DEFAULT"
+        onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
         domStorageEnabled={true}
         javaScriptEnabled={true}
         startInLoadingState={true}
