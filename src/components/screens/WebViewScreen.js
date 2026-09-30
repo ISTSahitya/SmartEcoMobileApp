@@ -12,6 +12,7 @@ import {
   NativeModules,
   Animated,
   ActivityIndicator,
+  useColorScheme,
 } from 'react-native';
 import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -39,6 +40,45 @@ import usePushNotifications from '../../hooks/usePushNotifications';
 const { VpnModule } = NativeModules;
 
 const ONBOARDING_BASE_URI = 'file:///android_asset/onboarding/index.html';
+
+/**
+ * Native frame colours for the web app's light and dark themes.
+ *
+ * The web app (SmartEco Enterprise UI) has a dark theme, but it only enables
+ * it inside the app when the app declares it can follow a dark page (see
+ * NATIVE_CAPS_SCRIPT below). The web then posts THEME_CHANGED whenever its
+ * theme changes, and these are what the frame around it switches to, so the
+ * status bar, the area behind it and the loading screen never show a white
+ * band over a dark page. `background` matches the web app's page canvas.
+ */
+const THEME_COLORS = {
+  light: {
+    background: '#F4F7F6',
+    barStyle: 'dark-content',
+    accent: '#217C70',
+    loadingText: '#217C70',
+  },
+  dark: {
+    background: '#091211',
+    barStyle: 'light-content',
+    accent: '#1E887A',
+    loadingText: '#7FD4CB',
+  },
+};
+
+/** Last theme the web reported, so the next launch starts in the right colours. */
+const WEB_THEME_STORAGE_KEY = 'SMARTECO_WEB_THEME';
+
+/**
+ * Injected before the web app's own scripts: tells the page this build can
+ * follow a dark theme (the web app checks window.__smartecoNativeCaps; builds
+ * without it are kept on the light theme). Replaces the old script that
+ * painted <html>/<body> white, which forced a white page under a dark theme.
+ */
+const NATIVE_CAPS_SCRIPT = `
+  window.__smartecoNativeCaps = { darkTheme: true };
+  true;
+`;
 
 /**
  * Normalise anything that can name a destination — an App Link URL or a bare
@@ -84,6 +124,21 @@ export const toWebPath = value => {
 
 const WebViewScreen = ({ route }) => {
   const insets = useSafeAreaInsets();
+  // The web app decides the theme (the user's Light / Dark / System choice).
+  // Until it reports one, start from the last reported theme, else the OS.
+  const systemScheme = useColorScheme();
+  const [webTheme, setWebTheme] = useState(null);
+  const theme = webTheme ?? (systemScheme === 'dark' ? 'dark' : 'light');
+  const colors = THEME_COLORS[theme];
+  useEffect(() => {
+    AsyncStorage.getItem(WEB_THEME_STORAGE_KEY)
+      .then(saved => {
+        if (saved === 'light' || saved === 'dark') {
+          setWebTheme(current => current ?? saved);
+        }
+      })
+      .catch(() => {});
+  }, []);
   const [canGoBack, setCanGoBack] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
@@ -346,6 +401,15 @@ const WebViewScreen = ({ route }) => {
       console.log('[WebView → Native] Received:', JSON.stringify(message));
 
       switch (message.action) {
+        case 'THEME_CHANGED': {
+          // Sent by the web app on load and whenever its theme changes.
+          if (message.theme === 'light' || message.theme === 'dark') {
+            setWebTheme(message.theme);
+            AsyncStorage.setItem(WEB_THEME_STORAGE_KEY, message.theme).catch(() => {});
+          }
+          break;
+        }
+
         case 'APP_VERSION_INFO': {
           // Web sends the version flat on the message (e.g. { latestVersion })
           // but may also nest it under `data`; support both shapes.
@@ -1000,11 +1064,16 @@ const WebViewScreen = ({ route }) => {
     <View
       style={[
         styles.container,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
+        {
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+          backgroundColor: colors.background,
+        },
       ]}
     >
       <StatusBar
-        barStyle="dark-content"
+        // The splash overlay is always light, so keep dark icons over it.
+        barStyle={showSplash ? 'dark-content' : colors.barStyle}
         backgroundColor="transparent"
         translucent={true}
       />
@@ -1013,7 +1082,7 @@ const WebViewScreen = ({ route }) => {
         mixedContentMode="always"
         onMessage={onWebMessage}
         source={{ uri: WEB_BASE_URL }}
-        style={[styles.webview, { backgroundColor: '#fff' }]}
+        style={[styles.webview, { backgroundColor: colors.background }]}
         contentInsetAdjustmentBehavior="automatic"
         androidLayerType="hardware"
         cacheEnabled={true}
@@ -1022,9 +1091,11 @@ const WebViewScreen = ({ route }) => {
         javaScriptEnabled={true}
         startInLoadingState={true}
         renderLoading={() => (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="small" color="#0F796B" />
-            <Text style={styles.loadingText}>Loading SmartEco Enterprise...</Text>
+          <View style={[styles.loadingOverlay, { backgroundColor: colors.background }]}>
+            <ActivityIndicator size="small" color={colors.accent} />
+            <Text style={[styles.loadingText, { color: colors.loadingText }]}>
+              Loading SmartEco Enterprise...
+            </Text>
           </View>
         )}
         onLoadEnd={async () => {
@@ -1057,21 +1128,17 @@ const WebViewScreen = ({ route }) => {
             Alert.alert('Could not open link', targetUrl);
           });
         }}
-        injectedJavaScriptBeforeContentLoaded={`
-          document.documentElement.style.backgroundColor = '#fff';
-          document.addEventListener('DOMContentLoaded', function() {
-            document.body.style.backgroundColor = '#fff';
-          });
-          true;
-        `}
+        injectedJavaScriptBeforeContentLoaded={NATIVE_CAPS_SCRIPT}
         onNavigationStateChange={navState => {
           setCanGoBack(navState.canGoBack);
         }}
       />
       {shouldShowLoadingOverlay && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="small" color="#0F796B" />
-          <Text style={styles.loadingText}>Loading SmartEco Enterprise...</Text>
+        <View style={[styles.loadingOverlay, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="small" color={colors.accent} />
+          <Text style={[styles.loadingText, { color: colors.loadingText }]}>
+            Loading SmartEco Enterprise...
+          </Text>
         </View>
       )}
       {showSplash && (
@@ -1100,7 +1167,7 @@ const WebViewScreen = ({ route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: THEME_COLORS.light.background,
   },
   webview: {
     flex: 1,
@@ -1109,12 +1176,12 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: THEME_COLORS.light.background,
   },
   loadingText: {
     marginTop: 12,
     fontSize: 14,
-    color: '#0F796B',
+    color: THEME_COLORS.light.loadingText,
     fontWeight: '500',
   },
   splashOverlay: {
