@@ -66,6 +66,9 @@ const THEME_COLORS = {
   },
 };
 
+/** A colour the web app sent for an edge area; anything else is ignored. */
+const isHexColor = value => typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value);
+
 /** Last theme the web reported, so the next launch starts in the right colours. */
 const WEB_THEME_STORAGE_KEY = 'SMARTECO_WEB_THEME';
 
@@ -130,6 +133,13 @@ const WebViewScreen = ({ route }) => {
   const [webTheme, setWebTheme] = useState(null);
   const theme = webTheme ?? (systemScheme === 'dark' ? 'dark' : 'light');
   const colors = THEME_COLORS[theme];
+  // Colours at the top and bottom edges of the current web screen (the login
+  // gradient, the app's top bar, the bottom tab bar...), sent as CHROME_COLORS.
+  // The status-bar and system-bar areas are painted to match, so they read as
+  // part of the page rather than a band of a different colour.
+  const [chrome, setChrome] = useState(null);
+  const chromeTop = chrome?.top ?? colors.background;
+  const chromeBottom = chrome?.bottom ?? colors.background;
   useEffect(() => {
     AsyncStorage.getItem(WEB_THEME_STORAGE_KEY)
       .then(saved => {
@@ -406,6 +416,13 @@ const WebViewScreen = ({ route }) => {
           if (message.theme === 'light' || message.theme === 'dark') {
             setWebTheme(message.theme);
             AsyncStorage.setItem(WEB_THEME_STORAGE_KEY, message.theme).catch(() => {});
+          }
+          break;
+        }
+
+        case 'CHROME_COLORS': {
+          if (isHexColor(message.top) && isHexColor(message.bottom)) {
+            setChrome({ top: message.top, bottom: message.bottom });
           }
           break;
         }
@@ -1077,6 +1094,16 @@ const WebViewScreen = ({ route }) => {
         backgroundColor="transparent"
         translucent={true}
       />
+      {/* Behind the status bar and the system navigation bar: the colour at
+          that edge of the current web screen. */}
+      <View
+        pointerEvents="none"
+        style={[styles.edgeTop, { height: insets.top, backgroundColor: chromeTop }]}
+      />
+      <View
+        pointerEvents="none"
+        style={[styles.edgeBottom, { height: insets.bottom, backgroundColor: chromeBottom }]}
+      />
       <WebView
         ref={webviewRef}
         mixedContentMode="always"
@@ -1171,6 +1198,18 @@ const styles = StyleSheet.create({
   },
   webview: {
     flex: 1,
+  },
+  edgeTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+  },
+  edgeBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
