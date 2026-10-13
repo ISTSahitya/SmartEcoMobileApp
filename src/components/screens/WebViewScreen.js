@@ -41,7 +41,13 @@ import {
   GOOGLE_IOS_CLIENT_ID,
   MICROSOFT,
 } from '../../config/socialAuth';
-import { WEB_BASE_URL, WEB_BASE_PATH, WEB_HOST } from '../../config/appConfig';
+import {
+  WEB_BASE_URL,
+  WEB_BASE_PATH,
+  WEB_HOST,
+  SHARED_DASHBOARD_URL,
+  DEVELOPER_DOCS_URL,
+} from '../../config/appConfig';
 import usePushNotifications from '../../hooks/usePushNotifications';
 
 const { VpnModule } = NativeModules;
@@ -214,12 +220,10 @@ const WebViewScreen = ({ route }) => {
     const url = request.url;
 
     // Shared dashboard URL
-    const isSharedDashboard =
-      url.startsWith('https://kiosk.smarteco.ai/SmartecoAvd/shared/');
+    const isSharedDashboard = url.startsWith(SHARED_DASHBOARD_URL);
 
     // Developer documentation URL
-    const isDeveloperDocumentation =
-      url.startsWith('https://dev.smarteco.ai/SmartecoAvd/developers');
+    const isDeveloperDocumentation = url.startsWith(DEVELOPER_DOCS_URL);
 
     if (isSharedDashboard || isDeveloperDocumentation) {
       Linking.openURL(url).catch(error => {
@@ -1147,7 +1151,7 @@ const WebViewScreen = ({ route }) => {
         ref={webviewRef}
         mixedContentMode="always"
         onMessage={onWebMessage}
-        source={{ uri: 'https://app.smarteco.ai/SmartecoAvd' }}
+        source={{ uri: WEB_BASE_URL }}
         style={[styles.webview, { backgroundColor: '#fff' }]}
         contentInsetAdjustmentBehavior="never"
         androidLayerType="hardware"

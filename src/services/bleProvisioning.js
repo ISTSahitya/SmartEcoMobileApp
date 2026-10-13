@@ -32,6 +32,9 @@ const RESULT_TIMEOUT_MS = 40000; // device tests WiFi (AT+CWJAP ~20s) before not
 
 let manager = null;
 
+// id -> advertised name from the most recent scan (see scanForDevices).
+const lastScanNames = new Map();
+
 const getManager = () => {
   if (!manager) {
     manager = new BleManager();
@@ -274,29 +277,49 @@ export const scanForDevices = async ({ timeoutMs = 8000 } = {}) => {
     return advertised.some(u => (u || '').toLowerCase() === SERVICE_UUID);
   };
 
+  // Prefer `localName` (taken from the live advertisement) over `name` (the OS's
+  // cached GAP name for this peripheral). The device encodes its serial in the
+  // name, so after a reflash with a new serial the cached `name` still carries
+  // the OLD serial until the OS refreshes it — which is why the first scan used
+  // to show the previous serial and only a rescan showed the current one.
+  // Duplicates are allowed so an entry first seen without an advertised name
+  // (scan response not yet received) gets corrected by a later packet.
   return new Promise((resolve, reject) => {
     mgr.startDeviceScan(
       scanFilter,
-      { allowDuplicates: false },
+      { allowDuplicates: true },
       (error, device) => {
         if (error) {
           mgr.stopDeviceScan();
           reject(error);
           return;
         }
-        if (device && matchesTarget(device) && !found.has(device.id)) {
+        if (!device || !matchesTarget(device)) return;
+        const prev = found.get(device.id);
+        if (device.localName) {
           found.set(device.id, {
             id: device.id,
-            name: device.name || device.localName || null,
+            name: device.localName,
             rssi: device.rssi,
           });
+        } else if (!prev) {
+          found.set(device.id, {
+            id: device.id,
+            name: device.name || null,
+            rssi: device.rssi,
+          });
+        } else {
+          prev.rssi = device.rssi;
         }
       },
     );
 
     setTimeout(() => {
       mgr.stopDeviceScan();
-      resolve(Array.from(found.values()));
+      const devices = Array.from(found.values());
+      lastScanNames.clear();
+      devices.forEach(d => d.name && lastScanNames.set(d.id, d.name));
+      resolve(devices);
     }, timeoutMs);
   });
 };
@@ -363,7 +386,13 @@ export const connectToDevice = async deviceId => {
   }
 
   connectedDevice = device;
-  return { id: device.id, name: device.name, mtu: device.mtu };
+  // `name` here is the GAP name, which can still be the OS-cached pre-reflash
+  // value; prefer the name we saw advertised during the scan.
+  return {
+    id: device.id,
+    name: lastScanNames.get(device.id) || device.localName || device.name,
+    mtu: device.mtu,
+  };
 };
 
 export const disconnectDevice = async () => {

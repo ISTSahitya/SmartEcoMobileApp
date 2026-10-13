@@ -15,6 +15,12 @@ export const WEB_BASE_PATH = '/SmartecoAvd';
 /** Hostname accepted by the Universal Link handler. */
 export const WEB_HOST = 'app.smarteco.ai';
 
+/** Shared dashboard URL prefix — opened in the external browser, not the WebView. */
+export const SHARED_DASHBOARD_URL = 'https://kiosk.smarteco.ai/SmartecoAvd/shared/';
+
+/** Developer documentation URL prefix — opened in the external browser, not the WebView. */
+export const DEVELOPER_DOCS_URL = 'https://dev.smarteco.ai/SmartecoAvd/developers';
+
 const APP_CONFIG = {
   // AsyncStorage keys for version check
   STORAGE_KEYS: {
