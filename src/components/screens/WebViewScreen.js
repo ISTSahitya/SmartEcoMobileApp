@@ -336,21 +336,30 @@ const WebViewScreen = ({ route }) => {
   // Android-only). App-Prefs:root=WIFI opens the Wi-Fi pane on most iOS
   // versions; fall back to the app's own Settings page if the scheme is
   // unavailable so the "Open Settings" button always does something.
-  const openIOSWifiSettings = () => {
-    Alert.alert('Enable Wi-Fi', 'Please enable Wi-Fi from Settings', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Open Settings',
-        onPress: () => {
-          // Re-read the connected Wi-Fi when the user comes back to the app.
-          awaitingWifiReturn.current = true;
-          Linking.openURL('App-Prefs:root=WIFI').catch(() =>
-            Linking.openSettings(),
-          );
+  // The wording must still make sense when Wi-Fi is already on: then the user
+  // is here to switch networks or because the current one has no internet.
+  const openIOSWifiSettings = ({ noInternet = false } = {}) => {
+    Alert.alert(
+      'Open Wi-Fi Settings',
+      noInternet
+        ? 'Please enable Wi-Fi from Settings or select a different Wi-Fi network with internet access.'
+        : 'Please select a different network to auto select here from Wi-Fi settings.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Open Settings',
+          onPress: () => {
+            // Re-read the connected Wi-Fi when the user comes back to the app.
+            awaitingWifiReturn.current = true;
+            Linking.openURL('App-Prefs:root=WIFI').catch(() =>
+              Linking.openSettings(),
+            );
+          },
         },
-      },
-    ]);
+      ],
+    );
   };
+ 
 
   // iOS location flow. PermissionsAndroid and LocationServicesDialogBox are
   // Android-only, so on iOS we lean on WifiManager.getCurrentWifiSSID(), which
@@ -559,20 +568,12 @@ const WebViewScreen = ({ route }) => {
           break;
 
         case 'OPEN_WIFI_SETTINGS':
-          if (Platform.OS === 'android') {
-            Linking.sendIntent('android.settings.WIFI_SETTINGS');
-          } else {
-            openIOSWifiSettings();
-          }
+          openIOSWifiSettings();
 
           break;
 
         case 'OPEN_WIFI_SETTINGS_FOR_NO_INTERNET':
-          if (Platform.OS === 'android') {
-            Linking.sendIntent('android.settings.WIFI_SETTINGS');
-          } else {
-            openIOSWifiSettings();
-          }
+          openIOSWifiSettings({ noInternet: true });
 
           break;
 
@@ -1167,6 +1168,10 @@ const WebViewScreen = ({ route }) => {
         // manifest permission — both are in place.
         allowsInlineMediaPlayback={true}
         mediaPlaybackRequiresUserAction={false}
+        // Swipe down at the top of the page to reload, like a browser's reload
+        // button. iOS shows the native UIRefreshControl spinner.
+        pullToRefreshEnabled={true}
+        bounces={true}
         // iOS: auto-grant the WKWebView getUserMedia request for our trusted web
         // app so the QR scanner starts without a second WebKit-level prompt. The
         // OS camera permission prompt (from NSCameraUsageDescription) still shows
