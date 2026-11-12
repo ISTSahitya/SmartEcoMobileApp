@@ -1,7 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   PermissionsAndroid,
-  AppState,
   BackHandler,
   Alert,
   Linking,
@@ -94,11 +93,9 @@ const WebViewScreen = ({ route }) => {
     updateInfo,
     showAppUpdateModal,
     dismissAppUpdate,
+    exitApp,
     openAppStore,
-    handleVersionData,
   } = useAppUpdate();
-  
-  const lastVersionData = useRef(null);
 
   const splashOnly = route.params?.splashOnly ?? false;
   const splashUri = splashOnly
@@ -205,16 +202,6 @@ const WebViewScreen = ({ route }) => {
     },
     onTokenRefresh: info => sendToWeb({ action: 'PUSH_TOKEN_REFRESHED', ...info }),
   });
-
-  // Re-check version when app comes to foreground
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', nextAppState => {
-      if (nextAppState === 'active' && lastVersionData.current) {
-        handleVersionData(lastVersionData.current);
-      }
-    });
-    return () => subscription.remove();
-  }, [handleVersionData]);
 
   /* Native social login: configure Google Sign-In once. Microsoft uses
      react-native-app-auth (Chrome Custom Tab) and Facebook uses the native FB
@@ -346,15 +333,6 @@ const WebViewScreen = ({ route }) => {
       console.log('[WebView → Native] Received:', JSON.stringify(message));
 
       switch (message.action) {
-        case 'APP_VERSION_INFO': {
-          // Web sends the version flat on the message (e.g. { latestVersion })
-          // but may also nest it under `data`; support both shapes.
-          const versionData = message.data || message;
-          lastVersionData.current = versionData;
-          handleVersionData(versionData);
-          break;
-        }
-
         case 'SOCIAL_LOGIN':
           handleSocialLogin(message.provider);
           break;
@@ -1091,6 +1069,7 @@ const WebViewScreen = ({ route }) => {
         visible={showAppUpdateModal}
         data={updateInfo}
         onDismiss={dismissAppUpdate}
+        onExit={exitApp}
         onUpdate={openAppStore}
       />
     </View>

@@ -1,250 +1,299 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   Modal,
   View,
   Text,
+  Image,
+  Animated,
+  Easing,
   Pressable,
+  StatusBar,
   StyleSheet,
+  useWindowDimensions,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const UpdateModal = ({ visible, data, onDismiss, onUpdate }) => {
+const DEVICE_IMAGE = require('../assets/images/smarteco-device.png');
+const LOGO_IMAGE = require('../assets/images/logo.png');
+
+const DESCRIPTIONS = {
+  hard:
+    "We've made important improvements to the SmartEco app. This version is no longer supported, so please update to continue using the app.",
+  soft:
+    "We've made some exciting improvements to the SmartEco app! Update now to enjoy the latest features and performance upgrades.",
+};
+
+/** Loops the animation `build(value)` returns while the modal is visible, and returns the value. */
+const useLoop = (visible, build) => {
+  const value = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!visible) return undefined;
+    value.setValue(0);
+    const loop = Animated.loop(build(value));
+    loop.start();
+    return () => loop.stop();
+    // build is a stable inline factory; only visibility should restart the loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, value]);
+  return value;
+};
+
+const pingPong = duration => value =>
+  Animated.sequence([
+    Animated.timing(value, {
+      toValue: 1,
+      duration,
+      easing: Easing.inOut(Easing.sin),
+      useNativeDriver: true,
+    }),
+    Animated.timing(value, {
+      toValue: 0,
+      duration,
+      easing: Easing.inOut(Easing.sin),
+      useNativeDriver: true,
+    }),
+  ]);
+
+const UpdateModal = ({ visible, data, onDismiss, onExit, onUpdate }) => {
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const isHard = data?.updateType === 'hard';
+
+  const float = useLoop(visible, pingPong(2600));
+  const drift = useLoop(visible, pingPong(7000));
+  const pulse = useLoop(visible, value =>
+    Animated.timing(value, {
+      toValue: 1,
+      duration: 3200,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }),
+  );
+
+  const deviceSize = width * 0.85;
+  const ringSize = deviceSize * 0.7;
+
+  const floatY = float.interpolate({ inputRange: [0, 1], outputRange: [0, -14] });
+
+  // Two rings half a cycle apart, so one is always expanding.
+  const ringStyle = progress => ({
+    opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] }),
+    transform: [
+      { scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1.6] }) },
+    ],
+  });
+  const pulseOffset = pulse.interpolate({
+    inputRange: [0, 0.5, 0.5001, 1],
+    outputRange: [0.5, 1, 0, 0.5],
+  });
 
   return (
     <Modal
       visible={visible}
-      transparent
-      animationType="fade"
+      animationType="slide"
       statusBarTranslucent
-      onRequestClose={() => {
-        onDismiss?.();
-      }}
+      // Back button: a hard update can't be closed, so it exits the app;
+      // on a soft update it acts like "Later".
+      onRequestClose={() => (isHard ? onExit?.() : onDismiss?.())}
     >
-      <View style={styles.overlay}>
-        <View style={styles.container}>
-          {/* Top accent bar */}
-          <LinearGradient
-            colors={['#0F796B', '#6FDC95']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.accentBar}
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      <LinearGradient
+        colors={['#FFFFFF', '#FFFFFF', '#F3FAF6']}
+        locations={[0, 0.65, 1]}
+        style={[styles.screen, { paddingTop: insets.top }]}
+      >
+        {/* Drifting background blobs */}
+        <Animated.View
+          style={[
+            styles.blob,
+            styles.blobTop,
+            {
+              width: width * 0.9,
+              height: width * 0.9,
+              borderRadius: width * 0.45,
+              transform: [
+                { translateX: drift.interpolate({ inputRange: [0, 1], outputRange: [-30, 30] }) },
+                { translateY: drift.interpolate({ inputRange: [0, 1], outputRange: [0, 40] }) },
+                { scale: drift.interpolate({ inputRange: [0, 1], outputRange: [1, 1.15] }) },
+              ],
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.blob,
+            styles.blobBottom,
+            {
+              width: width * 0.8,
+              height: width * 0.8,
+              borderRadius: width * 0.4,
+              transform: [
+                { translateX: drift.interpolate({ inputRange: [0, 1], outputRange: [20, -40] }) },
+                { translateY: drift.interpolate({ inputRange: [0, 1], outputRange: [30, -20] }) },
+                { scale: drift.interpolate({ inputRange: [0, 1], outputRange: [1.1, 0.95] }) },
+              ],
+            },
+          ]}
+        />
+
+        {/* Device in the bottom-right corner, bleeding off the edge like the template */}
+        <View
+          pointerEvents="none"
+          style={[
+            styles.deviceArea,
+            {
+              width: deviceSize,
+              height: deviceSize,
+              right: -deviceSize * 0.14,
+              bottom: insets.bottom - deviceSize * 0.12,
+            },
+          ]}
+        >
+          {[pulse, pulseOffset].map((progress, index) => (
+            <Animated.View
+              key={index}
+              style={[
+                styles.ring,
+                {
+                  width: ringSize,
+                  height: ringSize,
+                  borderRadius: ringSize / 2,
+                },
+                ringStyle(progress),
+              ]}
+            />
+          ))}
+          <Animated.Image
+            source={DEVICE_IMAGE}
+            resizeMode="contain"
+            style={{
+              width: deviceSize,
+              height: deviceSize,
+              transform: [{ translateY: floatY }, { rotate: '-8deg' }],
+            }}
           />
-
-          <View style={styles.content}>
-            {/* Title */}
-            <Text style={styles.title}>New version available</Text>
-
-            {/* Version badge */}
-            {data?.latestVersion && (
-              <View style={styles.versionRow}>
-                <View style={styles.versionBadgeCurrent}>
-                  <Text style={styles.versionBadgeCurrentText}>Current version: {data.currentVersion}</Text>
-                </View>
-                <View style={styles.arrow}>
-                  <Text style={styles.arrowText}>→</Text>
-                </View>
-                <View style={styles.versionBadgeNew}>
-                  <Text style={styles.versionBadgeNewText}>Latest version: {data.latestVersion}</Text>
-                </View>
-              </View>
-            )}
-
-            {/* Message */}
-            <Text style={styles.message}>
-              A new version of SmartEco Enterprise is available. Please update to get the latest features and improvements.
-            </Text>
-
-            <View style={styles.secondaryActions}>
-              <Pressable
-                onPress={onDismiss}
-                style={({ pressed }) => [styles.actionButton, styles.secondaryBtn, { opacity: pressed ? 0.8 : 1 }]}
-              >
-                <Text style={styles.remindText}>Exit</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={onUpdate}
-                style={({ pressed }) => [styles.actionButton, styles.updateAction, { opacity: pressed ? 0.9 : 1 }]}
-              >
-                <LinearGradient
-                  colors={['#0F796B', '#4EBD84']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.updateButton}
-                >
-                  <Text style={styles.updateButtonText}>Update Now</Text>
-                </LinearGradient>
-              </Pressable>
-            </View>
-          </View>
         </View>
-      </View>
+
+        <Image
+          source={LOGO_IMAGE}
+          resizeMode="contain"
+          style={styles.logo}
+        />
+
+        <View style={[styles.content, { paddingBottom: deviceSize * 0.52 }]}>
+          <Text style={styles.title}>New Update Available</Text>
+          <Text style={styles.message}>
+            {DESCRIPTIONS[isHard ? 'hard' : 'soft']}
+          </Text>
+
+          <Pressable
+            onPress={onUpdate}
+            style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+          >
+            <LinearGradient
+              colors={['#0F796B', '#4EBD84']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.updateButton}
+            >
+              <Text style={styles.updateButtonText}>Update Now</Text>
+            </LinearGradient>
+          </Pressable>
+
+          {!isHard && (
+            <Pressable
+              onPress={onDismiss}
+              hitSlop={8}
+              style={({ pressed }) => [styles.laterButton, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <Text style={styles.laterText}>Later</Text>
+            </Pressable>
+          )}
+        </View>
+      </LinearGradient>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  overlay: {
+  screen: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 28,
-  },
-  container: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    width: '100%',
-    maxWidth: 360,
     overflow: 'hidden',
-    elevation: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
   },
-  accentBar: {
-    height: 4,
-    width: '100%',
+  blob: {
+    position: 'absolute',
+  },
+  blobTop: {
+    top: -120,
+    left: -140,
+    backgroundColor: 'rgba(111, 220, 149, 0.08)',
+  },
+  blobBottom: {
+    bottom: -60,
+    left: -80,
+    backgroundColor: 'rgba(15, 121, 107, 0.04)',
+  },
+  logo: {
+    alignSelf: 'center',
+    marginTop: 20,
+    width: 180,
+    height: 50,
+  },
+  deviceArea: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ring: {
+    position: 'absolute',
+    borderWidth: 1.5,
+    borderColor: 'rgba(78, 189, 132, 0.6)',
+    backgroundColor: 'rgba(78, 189, 132, 0.04)',
   },
   content: {
-    paddingTop: 28,
-    paddingBottom: 24,
-    paddingHorizontal: 24,
+    flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
   },
   title: {
-    fontSize: 19,
+    fontSize: 28,
     fontWeight: '700',
     color: '#111827',
     textAlign: 'center',
-    marginBottom: 14,
-  },
-  versionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    gap: 8,
-  },
-  versionBadgeCurrent: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  versionBadgeCurrentText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#6B7280',
-  },
-  arrow: {
-    paddingHorizontal: 2,
-  },
-  arrowText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-  },
-  versionBadgeNew: {
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#D1FAE5',
-  },
-  versionBadgeNewText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#059669',
+    letterSpacing: -0.5,
+    marginBottom: 12,
   },
   message: {
     fontSize: 14,
     fontWeight: '400',
-    color: '#6B7280',
+    color: '#374151',
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 20,
-  },
-  releaseNotesContainer: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 22,
-    width: '100%',
-    borderLeftWidth: 3,
-    borderLeftColor: '#0F796B',
-  },
-  releaseNotesLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 6,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  releaseNotesText: {
-    fontSize: 13,
-    fontWeight: '400',
-    color: '#6B7280',
-    lineHeight: 20,
+    marginBottom: 28,
   },
   updateButton: {
-    minHeight: 48,
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    minHeight: 44,
+    paddingHorizontal: 24,
+    borderRadius: 22,
     alignItems: 'center',
-    width: '100%',
     justifyContent: 'center',
   },
   updateButtonText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    letterSpacing: 0.3,
   },
-  secondaryActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  laterButton: {
     marginTop: 16,
-    gap: 12,
-    width: '100%',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
   },
-  actionButton: {
-    flex: 1,
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-  },
-  secondaryBtn: {
-    flex: 0.5,
-    borderColor: '#B7DED3',
-    backgroundColor: '#F0FAF7',
-  },
-  dot: {
-    width: 3,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#D1D5DB',
-  },
-  remindText: {
+  laterText: {
     fontSize: 14,
     fontWeight: '500',
     color: '#0F796B',
-  },
-  skipText: {
-    fontSize: 13,
-    fontWeight: '400',
-    color: '#9CA3AF',
-  },
-  forceHint: {
-    fontSize: 11,
-    fontWeight: '400',
-    color: '#9CA3AF',
-    marginTop: 14,
-    textAlign: 'center',
-    letterSpacing: 0.2,
   },
 });
 

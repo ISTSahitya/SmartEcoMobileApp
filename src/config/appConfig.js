@@ -16,19 +16,25 @@ export const WEB_BASE_PATH = '/SmartecoAvd';
 /** Hostname accepted by the App Link handler. */
 export const WEB_HOST = 'app.smarteco.ai';
 
-const APP_CONFIG = {
-  // AsyncStorage keys for version check
-  STORAGE_KEYS: {
-    VERSION_CHECK_LAST_DISMISSED: 'VERSION_CHECK_LAST_DISMISSED',
-    VERSION_CHECK_SKIP_VERSION: 'VERSION_CHECK_SKIP_VERSION',
-    VERSION_CHECK_CACHED_RESPONSE: 'VERSION_CHECK_CACHED_RESPONSE',
-  },
+/* -------------------- app update -------------------- */
 
-  // Soft update cooldown: don't re-prompt within this duration (milliseconds)
-  SOFT_UPDATE_COOLDOWN_MS: 24 * 60 * 60 * 1000, // 24 hours
+/** Returns the latest published app version and whether the update is soft or hard. */
+export const APP_VERSION_API_URL =
+  'https://app.smarteco.ai/SmartecoAvdapi/api/v1/app-versions/latest/android';
 
-  // Minimum interval between version checks on app foreground (milliseconds)
-  FOREGROUND_CHECK_INTERVAL_MS: 5 * 60 * 1000, // 5 minutes
-};
+/** Opened by "Update Now" when the API response carries no storeUrl. */
+export const PLAY_STORE_URL =
+  'https://play.google.com/store/apps/details?id=com.smartecoenterprise.app';
 
-export default APP_CONFIG;
+/**
+ * Minimum gap between version API calls when the app returns to the
+ * foreground. The launch check always runs; this only stops every quick app
+ * switch from hitting the API.
+ */
+export const FOREGROUND_CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+
+/** After "Later" on a soft update, don't prompt again for that version for this long. Hard updates ignore it. */
+export const SOFT_UPDATE_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+/** AsyncStorage key holding { version, dismissedAt } for the last soft update dismissed. */
+export const SOFT_UPDATE_DISMISSED_KEY = 'SOFT_UPDATE_DISMISSED';
