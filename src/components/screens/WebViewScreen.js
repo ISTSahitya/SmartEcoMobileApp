@@ -22,10 +22,8 @@ import ReactNativeBlobUtil from 'react-native-blob-util';
 import Share from 'react-native-share';
 import RNPrint from 'react-native-print';
 import LocationServicesDialogBox from 'react-native-android-location-services-dialog-box';
-import useVersionCheck from '../../hooks/useVersionCheck';
 import useAppUpdate from '../../hooks/useAppUpdate';
 import UpdateModal from '../UpdateModal';
-import AppUpdateModal from '../AppUpdateModal';
 import { ONBOARDING_BASE_URI, ONBOARDING_READ_ACCESS } from '../../utils/onboarding';
 import {
   scanForDevices,
@@ -119,16 +117,7 @@ const WebViewScreen = ({ route }) => {
     showAppUpdateModal,
     dismissAppUpdate,
     openAppStore,
-}  = useAppUpdate();
-  const {
-    modalVisible,
-    updateType,
-    updateData,
-    handleVersionData,
-    dismiss,
-    skipVersion,
-  } = useVersionCheck();
-  const lastVersionData = useRef(null);
+  } = useAppUpdate();
   // Set when we send the user to Wi-Fi settings so we can re-read the connected
   // network once they return to the app (see the AppState listener below).
   const awaitingWifiReturn = useRef(false);
@@ -154,16 +143,6 @@ const WebViewScreen = ({ route }) => {
       }
     } catch (_) {}
   }, [splashOnly, splashOpacity]);
-
-  // Re-check version when app comes to foreground
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', nextAppState => {
-      if (nextAppState === 'active' && lastVersionData.current) {
-        handleVersionData(lastVersionData.current);
-      }
-    });
-    return () => subscription.remove();
-  }, [handleVersionData]);
 
   // When the user returns from Wi-Fi settings, re-read the connected network
   // and push it to the web app. The flag is set before we open settings.
@@ -503,11 +482,6 @@ const WebViewScreen = ({ route }) => {
       console.log('[WebView → Native] Received:', JSON.stringify(message));
 
       switch (message.action) {
-        case 'APP_VERSION_INFO':
-          lastVersionData.current = message.data;
-          handleVersionData(message.data);
-          break;
-
         case 'SOCIAL_LOGIN':
           handleSocialLogin(message.provider);
           break;
@@ -1244,19 +1218,10 @@ const WebViewScreen = ({ route }) => {
         </Animated.View>
       )}
       <UpdateModal
-        visible={modalVisible}
-        type={updateType}
-        data={updateData}
-        onDismiss={dismiss}
-        onSkipVersion={skipVersion}
-      />
-
-      <AppUpdateModal
         visible={showAppUpdateModal}
-        currentVersion={updateInfo?.currentVersion || 'Unknown'}
-        latestVersion={updateInfo?.latestVersion || 'Unknown'}
+        data={updateInfo}
+        onDismiss={dismissAppUpdate}
         onUpdate={openAppStore}
-        onExit={dismissAppUpdate}
       />
     </View>
   );
