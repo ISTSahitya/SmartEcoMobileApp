@@ -98,9 +98,11 @@ target 'Smart' do
     )
 
     installer.pods_project.targets.each do |target|
-      if target.name == 'fmt'
-        target.build_configurations.each do |config|
-          config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+      target.build_configurations.each do |build_config|
+        build_config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios_version_supported
+
+        if target.name == 'fmt'
+          build_config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
         end
       end
     end

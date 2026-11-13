@@ -8,6 +8,7 @@ import {
   Easing,
   Pressable,
   StatusBar,
+  ScrollView,
   StyleSheet,
   useWindowDimensions,
 } from 'react-native';
@@ -57,7 +58,7 @@ const pingPong = duration => value =>
 
 const UpdateModal = ({ visible, data, onDismiss, onUpdate }) => {
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const isHard = data?.updateType === 'hard';
 
   const float = useLoop(visible, pingPong(2600));
@@ -73,6 +74,10 @@ const UpdateModal = ({ visible, data, onDismiss, onUpdate }) => {
 
   const deviceSize = width * 0.85;
   const ringSize = deviceSize * 0.7;
+  const contentBottomPadding = Math.min(
+    deviceSize * 0.62,
+    Math.max(insets.bottom + 16, height * 0.24),
+  );
 
   const floatY = float.interpolate({ inputRange: [0, 1], outputRange: [0, -14] });
 
@@ -147,7 +152,7 @@ const UpdateModal = ({ visible, data, onDismiss, onUpdate }) => {
               width: deviceSize,
               height: deviceSize,
               right: -deviceSize * 0.14,
-              bottom: insets.bottom - deviceSize * 0.12,
+              bottom: insets.bottom - deviceSize * 0.05,
             },
           ]}
         >
@@ -182,25 +187,34 @@ const UpdateModal = ({ visible, data, onDismiss, onUpdate }) => {
           style={styles.logo}
         />
 
-        <View style={[styles.content, { paddingBottom: deviceSize * 0.52 }]}>
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={[
+            styles.contentContainer,
+            { paddingBottom: contentBottomPadding },
+          ]}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
           <Text style={styles.title}>New Update Available</Text>
           <Text style={styles.message}>
             {DESCRIPTIONS[isHard ? 'hard' : 'soft']}
           </Text>
 
+          {/* The text sizes the pill; the gradient only fills (and is clipped to) it. */}
           <Pressable
             onPress={onUpdate}
-            style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+            style={({ pressed }) => [styles.updateButton, { opacity: pressed ? 0.85 : 1 }]}
           >
             <LinearGradient
               colors={['#0F796B', '#4EBD84']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
-              style={styles.updateButton}
-            >
-              <Text style={styles.updateButtonText}>Update Now</Text>
-            </LinearGradient>
+              style={StyleSheet.absoluteFill}
+            />
+            <Text style={styles.updateButtonText}>Update Now</Text>
           </Pressable>
+ 
 
           {!isHard && (
             <Pressable
@@ -211,7 +225,7 @@ const UpdateModal = ({ visible, data, onDismiss, onUpdate }) => {
               <Text style={styles.laterText}>Later</Text>
             </Pressable>
           )}
-        </View>
+        </ScrollView>
       </LinearGradient>
     </Modal>
   );
@@ -237,7 +251,7 @@ const styles = StyleSheet.create({
   },
   logo: {
     alignSelf: 'center',
-    marginTop: 20,
+    marginTop: -5,
     width: 180,
     height: 50,
   },
@@ -254,6 +268,9 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  contentContainer: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
@@ -275,9 +292,11 @@ const styles = StyleSheet.create({
     marginBottom: 28,
   },
   updateButton: {
+    alignSelf: 'center',
     minHeight: 44,
-    paddingHorizontal: 24,
+    paddingHorizontal: 28,
     borderRadius: 22,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },

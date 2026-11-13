@@ -31,17 +31,12 @@
 			</array>
 		</dict>
 		<dict>
-			<!-- Google Sign-In: reversed form of GOOGLE_IOS_CLIENT_ID in
-			     src/config/socialAuth.js. -->
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>com.googleusercontent.apps.973195332590-1fk3fq7p6q5gcp64geefvfdoahcd22f2</string>
 			</array>
 		</dict>
 		<dict>
-			<!-- react-native-app-auth: catches the Microsoft OAuth redirect
-			     (MICROSOFT.redirectUrl in src/config/socialAuth.js is
-			     smartecoavd://oauth2redirect). -->
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>smartecoavd</string>
@@ -53,6 +48,8 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
@@ -75,29 +72,24 @@
 	<string>SmartEco Enterprise uses Bluetooth to discover and configure your nearby SmartEco devices.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>SmartEco Enterprise uses the camera to scan device QR codes during setup.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>SmartEco Enterprise needs access to save downloaded files so you can view and manage them on your device.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>SmartEco Enterprise uses the local network to connect to and configure your SmartEco devices.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SmartEco Enterprise uses your location to scan for nearby Wi-Fi networks while setting up your device.</string>
-	<key>NSDocumentsFolderUsageDescription</key>
-	<string>SmartEco Enterprise needs access to save downloaded files so you can view and manage them on your device.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>SmartEco Enterprise saves images such as device QR codes to your photo library when you choose to save them.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>SmartEco Enterprise needs access to your photo library so you can save and share images such as device QR codes.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
-	<key>UIFileSharingEnabled</key>
-	<true/>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
-		<!-- Lets APNs wake the app to deliver a notification while it is
-		     backgrounded or suspended. Pairs with the Background Modes ->
-		     Remote notifications capability in Xcode. -->
 		<string>remote-notification</string>
 	</array>
+	<key>UIFileSharingEnabled</key>
+	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>BootSplash</string>
 	<key>UIRequiredDeviceCapabilities</key>
